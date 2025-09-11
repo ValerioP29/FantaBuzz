@@ -1,0 +1,27 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+
+# Build / cache
+dist/
+build/
+.cache/
+*.log
+
+# Dati runtime (non devono mai finire su GitHub)
+server/data/
+*.json
+
+# PWA / browser cache
+client/public/sw.js
+client/public/manifest.webmanifest
+
+# Sistema operativo / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

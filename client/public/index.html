@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FantaBid 2.9</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0e0f12">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+</head>
+<body>
+  <header class="topbar">
+  <div class="brand">FantAstaBuzz</div>
+  <button id="btnLogout" class="btn btn-outline btn-sm">Esci</button>
+</header>
+
+  <section id="screenLogin" class="screen">
+    <div class="card card-lg intro">
+      <h1>Entra nell’asta</h1>
+      <div class="grid">
+        <input id="regName" class="input" placeholder="Nome squadra" />
+        <input id="regCredits" class="input" type="number" min="0" placeholder="Crediti posseduti" />
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="regHost" />
+        <span class="knob"></span><span class="label">Dirigi l’asta</span>
+      </label>
+      <button id="btnEnter" class="btn btn-primary">Entra</button>
+    </div>
+  </section>
+
+  <section id="screenMain" class="screen hidden">
+    <div class="wrap">
+      <aside class="col col-left">
+        <div class="card">
+          <div class="row space-between">
+            <h2>Controllo</h2>
+            <div class="chip" id="hostStatus">Partecipante</div>
+          </div>
+
+          <div class="row gap">
+            <button id="btnHostToggle" class="btn btn-outline">Banditore</button>
+            <button id="btnRoll" class="btn btn-outline">Pausa/Play rullo</button>
+          </div>
+
+          <div class="rolebar" id="rolebar">
+            <button class="role btn" data-role="P">P</button>
+            <button class="role btn" data-role="D">D</button>
+            <button class="role btn" data-role="C">C</button>
+            <button class="role btn" data-role="A">A</button>
+            <button id="btnRandom" class="btn btn-outline">Random</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <details open>
+            <summary class="summary-title">Partecipanti (live, il banditore può rimuovere)</summary>
+            <ul id="manageList" class="list"></ul>
+          </details>
+        </div>
+
+        <div class="card">
+          <details>
+            <summary class="summary-title">Aggiudicazioni recenti</summary>
+            <ul id="historyList" class="list"></ul>
+          </details>
+        </div>
+
+        <div class="card">
+          <details open>
+            <summary class="summary-title">Import/Export</summary>
+
+            <div class="row gap">
+              <button id="btnImportFile" class="btn btn-primary">Importa XLSX/CSV</button>
+              <input id="fileImport" type="file" accept=".xlsx,.csv" style="display:none" />
+            </div>
+
+            <div class="muted" style="margin-top:.5rem">
+              Atteso Excel con colonne: <code>Nome</code>, <code>Fuori lista</code>, <code>Sq.</code>, <code>R.</code>, <code>FM</code>.
+              Le righe con <code>Fuori lista = *</code> vengono scartate. <code>R.</code> normalizzato in P/D/C/A. <code>FM</code> accetta la virgola.
+            </div>
+
+            <div class="row gap" style="margin-top:.75rem">
+              <a class="btn btn-outline" href="/api/export/teams.csv" target="_blank" rel="noopener">Export squadre (CSV)</a>
+              <a class="btn btn-outline" href="/api/export/history.csv" target="_blank" rel="noopener">Export aggiudicazioni (CSV)</a>
+              <a class="btn btn-outline" href="/api/export/all.json" target="_blank" rel="noopener">Export completo (JSON)</a>
+            </div>
+          </details>
+        </div>
+      </aside>
+
+      <main class="col col-right">
+        <div class="card highlight">
+          <div class="row space-between">
+            <h2>Riepilogo</h2>
+            <div class="badge" id="phaseBadge">LOBBY</div>
+          </div>
+
+          <div class="slot" aria-live="polite">
+            <div class="slot-inner" id="slotInner"></div>
+          </div>
+
+          <div class="summary">
+            <div class="summary-item"><div class="label">Offerta</div><div class="value" id="sumBid">0</div></div>
+            <div class="summary-item"><div class="label">Leader</div><div class="value" id="sumLeader">—</div></div>
+            <div class="summary-item"><div class="label">I tuoi crediti</div><div class="value" id="sumCredits">—</div></div>
+            <div class="summary-item countdown-wrap"><div class="label">Countdown</div><div class="countdown" id="countdown">—</div></div>
+          </div>
+
+          <div id="bidsBox" class="bids">
+            <button class="btn inc" data-inc="1">+1</button>
+            <button class="btn inc" data-inc="2">+2</button>
+            <button class="btn inc" data-inc="3">+3</button>
+            <button class="btn inc" data-inc="5">+5</button>
+            <button class="btn inc" data-inc="10">+10</button>
+            <div class="freebid">
+              <input id="freeBid" class="input" type="number" min="0" placeholder="Offerta libera" />
+              <button id="btnFreeBid" class="btn btn-outline">Offri</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>I tuoi acquisti</h3>
+          <ul id="acqList" class="list list-cards"></ul>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+  <!-- SheetJS per lettura XLSX lato client -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
