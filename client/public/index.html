@@ -13,6 +13,10 @@
   <header class="topbar">
   <div class="brand">FantAstaBuzz</div>
   <button id="btnLogout" class="btn btn-outline btn-sm">Esci</button>
+  <button id="btnHostExitAndClose" class="btn btn-danger">
+  Chiudi asta
+</button>
+
 </header>
 
   <section id="screenLogin" class="screen">
@@ -97,17 +101,18 @@
             <div class="badge" id="phaseBadge">LOBBY</div>
           </div>
 
-          <div class="slot" aria-live="polite">
+         <div class="slot" aria-live="polite" aria-atomic="true">
             <div class="slot-inner" id="slotInner"></div>
           </div>
 
-          <div class="summary">
+          <div class="summary" role="status" aria-live="polite" aria-atomic="true">
             <div class="summary-item"><div class="label">Offerta</div><div class="value" id="sumBid">0</div></div>
             <div class="summary-item"><div class="label">Leader</div><div class="value" id="sumLeader">—</div></div>
             <div class="summary-item"><div class="label">I tuoi crediti</div><div class="value" id="sumCredits">—</div></div>
-            <div class="summary-item countdown-wrap"><div class="label">Countdown</div><div class="countdown" id="countdown">—</div></div>
+            <div class="summary-item countdown-wrap" role="status" aria-live="polite" aria-atomic="true">
+            <div class="label">Countdown</div><div class="countdown" id="countdown">—</div>
+            </div>
           </div>
-
           <div id="bidsBox" class="bids">
             <button class="btn inc" data-inc="1">+1</button>
             <button class="btn inc" data-inc="2">+2</button>

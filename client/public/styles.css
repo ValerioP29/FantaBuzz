@@ -19,11 +19,17 @@ html,body{ height:100% }
 body{
   margin:0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif;
+  font-size: clamp(14px, 1.4vw, 16px);
   color:var(--text);
   background:
     radial-gradient(1200px 650px at -10% -10%, #182232 0%, transparent 60%),
     radial-gradient(1000px 800px at 120% 10%, #102018 0%, transparent 50%),
     var(--bg);
+}
+
+/* Riduci animazioni per chi le odia (giustamente) */
+@media (prefers-reduced-motion: reduce){
+  *{ animation: none !important; transition: none !important }
 }
 
 /* ===== Header ===== */
@@ -33,25 +39,22 @@ body{
   background:rgba(19,23,34,.6);
   backdrop-filter: blur(8px);
   border-bottom:1px solid var(--outline);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display:flex; justify-content:space-between; align-items:center;
 }
-
-
 .brand{ font-weight:900; letter-spacing:.3px; }
 .brand span{ color:var(--accent); }
 
 /* ===== Screens ===== */
 .screen{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
-.hidden{ display:none; }
+.hidden{ display:none !important; }
 
 /* ===== Cards & layout ===== */
 .wrap{
   display:grid;
-  grid-template-columns: 1.05fr 1.45fr;
+  grid-template-columns: 1.05fr 1.45fr; /* desktop largo */
   gap:24px;
   width:min(1200px, 100%);
+  padding: 16px;
   margin:0 auto;
 }
 
@@ -64,7 +67,8 @@ body{
 }
 
 .card-lg{
-  width:min(560px, 100%);
+  width:100%;
+  max-width:560px;
   background: linear-gradient(180deg, #171c29, #111523);
   border:1px solid var(--outline);
   border-radius:calc(var(--radius) + 4px);
@@ -80,7 +84,7 @@ body{
 
 /* ===== Controls ===== */
 .input{
-  height:46px; width:100%;
+  min-height:46px; width:100%;
   border-radius:12px; border:1px solid var(--outline);
   background:#0f1320; color:var(--text);
   padding:0 12px;
@@ -88,11 +92,12 @@ body{
 .input::placeholder{ color:#7f8796 }
 
 .btn{
-  height:46px; padding:0 16px;
+  min-height:46px; padding:0 16px;
   border-radius:12px; border:1px solid var(--outline);
   background:linear-gradient(180deg, #20273a, #1a2030);
   color:var(--text); cursor:pointer;
   transition: transform .06s ease, filter .2s ease;
+  touch-action: manipulation;
 }
 .btn:hover{ filter:brightness(1.06) }
 .btn:active{ transform: translateY(1px) }
@@ -118,6 +123,7 @@ body{
 }
 #btnHostToggle:disabled{ opacity:.6; }
 
+/* Chip & badge */
 .chip{
   padding:6px 10px; border-radius:999px; border:1px solid var(--outline);
   background:#0f1320; color:var(--muted); font-size:12px;
@@ -128,9 +134,7 @@ body{
 }
 
 /* Toggle host in login */
-.toggle{
-  display:inline-flex; align-items:center; gap:10px; margin:10px 0 14px;
-}
+.toggle{ display:inline-flex; align-items:center; gap:10px; margin:10px 0 14px; }
 .toggle input{ display:none }
 .toggle .knob{
   width:42px; height:26px; border-radius:999px; position:relative;
@@ -187,29 +191,27 @@ body{
 /* ===== Rolebar ===== */
 .rolebar{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap }
 .rolebar .role{ min-width:64px }
-
-.rolebar .role.active {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8); /* blu acceso */
-  color: #fff;
-  font-weight: 700;
+.rolebar .role.active{
+  background: linear-gradient(180deg, #7dd3fc, #38bdf8);
+  color:#032137;
+  border-color:#38bdf8;
+  font-weight:800;
+  box-shadow: 0 0 0 2px rgba(56,189,248,.25);
 }
-
 
 /* ===== Bids ===== */
 .bids{
   margin-top:16px;
   display:grid; gap:10px;
-  grid-template-columns: repeat(5, minmax(80px, 1fr)) 1fr;
+  grid-template-columns: repeat(5, minmax(80px, 1fr)) 1fr; /* 5 bottoni + input */
   align-items:center;
 }
 .freebid{ display:flex; gap:8px }
 
-/* ===== Slot machine (lista che scorre) ===== */
-/* ===== Rullo centrato con prev/current/next ===== */
 /* ===== Rullo centrato con prev/current/next ===== */
 .slot {
   position: relative;
-  height: 320px;                     /* più alto, così prev/next entrano */
+  height: 340px;
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -217,7 +219,6 @@ body{
   border-radius: 14px;
   border: 1px solid rgba(255,255,255,.06);
 }
-
 .slot-inner { width: min(760px, 96%); margin: 0 auto; }
 
 .slot-stack {
@@ -237,91 +238,79 @@ body{
   backdrop-filter: saturate(120%);
   will-change: transform, opacity;
 }
-
-.slot-item .line.main {
-  display: inline-flex;
-  gap: 10px;
-  align-items: baseline;
-}
-.slot-item .name {
-  letter-spacing: .2px;
-  white-space: nowrap;
-}
-
+.slot-item .line.main { display:inline-flex; gap:10px; align-items:baseline; }
+.slot-item .name { letter-spacing:.2px; white-space:nowrap; }
 .slot-item .role {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: .85rem;
-  font-weight: 700;
-  border: 1px solid rgba(255,255,255,.1);
-  padding: 2px 8px;
-  border-radius: 10px;
-  opacity: .9;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size:.85rem; font-weight:700;
+  border:1px solid rgba(255,255,255,.1);
+  padding:2px 8px; border-radius:10px; opacity:.9;
 }
-
-.slot-item .line.sub {
-  margin-top: 4px;
-  font-size: .9rem;
-  opacity: .8;
-}
+.slot-item .line.sub { margin-top:4px; font-size:.9rem; opacity:.8; }
 
 /* Vicini leggibili ma non dominanti */
-.slot-item.prev,
-.slot-item.next {
-  font-size: 1.1rem;
-  opacity: .70;                      /* erano troppo sbiaditi */
-  filter: saturate(90%);             /* niente blur */
-  transform: scale(.98);
+.slot-item.prev, .slot-item.next {
+  font-size:1.1rem; opacity:.70; filter:saturate(90%); transform:scale(.98);
 }
-
 /* Corrente ben in evidenza */
 .slot-item.current {
   font-size: clamp(1.6rem, 3.8vw, 2.5rem);
-  font-weight: 800;
-  opacity: 1;
-  transform: scale(1.06);
+  font-weight:800; opacity:1; transform:scale(1.06);
   background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   box-shadow: 0 6px 24px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.04);
 }
+.slot-item.is-empty { opacity:.25; }
 
-.slot-item.is-empty { opacity: .25; }
+/* Bottoni outline hover */
+.btn.btn-outline:hover { border-color:#4b5d7a; }
 
-/* Mobile: un filo più stretti */
-@media (max-width: 480px){
-  .slot { height: 280px; }
-  .slot-item.current { font-size: clamp(1.4rem, 5vw, 2.1rem); }
+/* Meta in liste */
+.list .meta { color:#9aa3ad; font-size:12px; margin-left:8px; }
+
+/* ========================= */
+/* ====== Breakpoints ====== */
+/* ========================= */
+
+/* <= 1280px: contenitore un filo più stretto */
+@media (max-width: 1280px){
+  .wrap{ width: min(1100px, 100%); gap:20px; }
+  .slot{ height: 330px; }
 }
 
-/* ===== Rolebar ===== */
-.rolebar{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap }
-.rolebar .role{ min-width:64px }
-
-/* Evidenziazione del filtro attivo */
-.rolebar .role.active{
-  background: linear-gradient(180deg, #7dd3fc, #38bdf8);
-  color:#032137;
-  border-color:#38bdf8;
-  font-weight:800;
-  box-shadow: 0 0 0 2px rgba(56,189,248,.25);
-}
-/* Bids container: stato disabilitato visivo */
-.bids.disabled {
-  filter: grayscale(0.5);
-  opacity: 0.6;
-}
-.bids.disabled .btn {
-  cursor: not-allowed;
+/* <= 1024px: layout due colonne pari */
+@media (max-width: 1024px){
+  .wrap{ grid-template-columns: 1fr 1fr; width:min(980px, 100%); }
+  .summary{ grid-template-columns: repeat(3, 1fr); }
+  .bids{ grid-template-columns: repeat(4, minmax(80px,1fr)) 1fr; }
+  .topbar{ padding: 12px 14px; }
 }
 
-/* Bottoni remove (kick/undo) già usano .btn-outline; rendiamoli un filo più cattivi al hover */
-.btn.btn-outline:hover {
-  border-color:#4b5d7a;
+/* <= 768px: mobile/tablet in portrait, 1 colonna */
+@media (max-width: 768px){
+  .screen{ padding:16px; }
+  .wrap{
+    grid-template-columns: 1fr;
+    gap:16px;
+    width:100%;
+    padding: 12px;
+  }
+  .grid{ grid-template-columns: 1fr; }
+  .card-lg{ max-width:100%; padding:18px; }
+  .summary{ grid-template-columns: repeat(2, 1fr); }
+  .bids{ grid-template-columns: repeat(3, minmax(80px,1fr)) 1fr; }
+  .slot{ height: 300px; }
+  .topbar{ padding: 10px 12px; }
+  .btn{ min-height:44px; padding: 0 14px; }
 }
 
-/* Riga history con meta */
-.list .meta {
-  color:#9aa3ad;
-  font-size:12px;
-  margin-left:8px;
+/* <= 560px: telefoni piccoli */
+@media (max-width: 560px){
+  .summary{ grid-template-columns: 1fr; }
+  .bids{
+    grid-template-columns: repeat(2, minmax(80px,1fr));
+    grid-auto-rows: minmax(44px, auto);
+  }
+  .freebid{ grid-column: 1 / -1; }
+  .slot{ height: 280px; }
+  .rolebar .role{ min-width:56px }
 }

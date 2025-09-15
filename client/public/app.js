@@ -23,13 +23,26 @@ let youAreHost = false;
   });
 })();
 
+(function prefillFromQuery(){
+  try {
+    const q = new URLSearchParams(location.search);
+    const t = (q.get('team') || '').trim();
+    if (t) {
+      $('regName').value = t;
+      $('screenLogin').classList.remove('hidden');
+      $('screenMain').classList.add('hidden');
+    }
+  } catch(_){}
+})();
+
+
 
 function $(id){ return document.getElementById(id); }
 const notify = (text, type='info') => {
   const bg = type === 'success' ? "linear-gradient(135deg,#22c55e,#16a34a)"
            : type === 'error'   ? "linear-gradient(135deg,#ef4444,#b91c1c)"
            : "linear-gradient(135deg,#7dd3fc,#38bdf8)";
-  Toastify({ text, duration: 2400, gravity: "top", position: "right", backgroundColor: bg }).showToast();
+  Toastify({ text, duration: 2400, gravity: "top", position: "center", style: {background: bg} }).showToast();
 };
 
 /* ===== RENDER LATO PARTECIPANTI ===== */
@@ -154,8 +167,6 @@ function resetSummaryUI(){
 
 /* ===== APPLY STATE ===== */
 function applyState(s){
-  if (!registered) return;
-
   $('phaseBadge').textContent = s.phase || '—';
   youAreHost = !!s.youAreHost;
   $('hostStatus').textContent = youAreHost ? 'Banditore' : 'Partecipante';
@@ -225,19 +236,17 @@ $('btnEnter').onclick = () => {
   if (!name) { notify('Inserisci nome squadra', 'error'); return; }
 
   socket.emit('team:register', { name, credits }, (res)=>{
-    if (res?.error){ notify(res.error, 'error'); return; }
+    if(res?.error){ notify(res.error, 'error'); return; }
 
-    // <<< SALVA LA SESSIONE >>>
-    try {
-      localStorage.setItem('teamSession', JSON.stringify({ teamId: res.teamId, key: res.key }));
-    } catch(_) {}
+    // SALVA QUI la sessione per il resume
+    try { localStorage.setItem('teamSession', JSON.stringify({ teamId: res.teamId, key: res.key })); } catch(_){}
 
     registered = true;
     $('screenLogin').classList.add('hidden');
     $('screenMain').classList.remove('hidden');
 
     if ($('regHost').checked) {
-      socket.emit('host:toggle', {}, (r)=>{ if (r?.error) notify(r.error, 'error'); });
+      socket.emit('host:toggle', {}, (r)=>{ if(r?.error) notify(r.error, 'error'); });
     }
     notify('Sei dentro. Buona asta.', 'success');
   });
@@ -245,9 +254,15 @@ $('btnEnter').onclick = () => {
 
 
 /* ===== Host controls ===== */
-$('btnHostToggle').onclick = () =>
-  socket.emit('host:toggle', {}, (res)=> res?.error ? notify(res.error, 'error')
-                                                    : notify(res.host ? 'Hai preso il ruolo di banditore' : 'Hai lasciato il ruolo', 'info'));
+$('btnHostToggle').onclick = () => {
+  const payload = {};
+  if (!document.body.dataset.hostPinAsked) {
+    const pin = prompt('PIN banditore (se configurato):') || '';
+    payload.pin = pin; document.body.dataset.hostPinAsked = '1';
+  }
+  socket.emit('host:toggle', payload, (res)=> res?.error ? notify(res.error, 'error')
+                                                         : notify(res.host ? 'Hai preso il ruolo di banditore' : 'Hai lasciato il ruolo', 'info'));
+};
 
 $('btnRoll').onclick = () =>
   socket.emit('host:toggleRoll', {}, (res)=> res?.error ? notify(res.error, 'error')
@@ -274,7 +289,7 @@ document.querySelectorAll('.rolebar .role').forEach(b => {
     });
 
     // fermo il rullo quando cambio filtro
-    socket.emit('host:toggleRoll', {}, ()=>{});
+    socket.emit('host:stopRoll', {}, ()=>{});
   };
 });
 
@@ -320,29 +335,51 @@ fileInput.onchange = async (e) => {
     if (file.name.toLowerCase().endsWith('.csv')) {
       // CSV diretto
       csvText = await file.text();
-    } else {
-      // XLSX -> JSON -> normalizza -> CSV
+        } else {
+      // XLSX -> JSON -> normalizza -> CSV con alias header robusti
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type:'array' });
 
-      // prendi il primo foglio che ha intestazioni con "Nome" e "R."
-      let sheet = null, headerRow = 0;
+      // Definizione alias header
+      const HDR = {
+        name: [/^nome$/i],
+        role: [/^r\.?$|^ruolo$/i],
+        team: [/^sq\.?$|^squadra$/i],
+        fm:   [/^fm$|^fantamedia$/i],
+        out:  [/^fuori\s*lista$|^fuorilista$/i],
+      };
+      const matchHeaderIndex = (headerArr, rxArr) => {
+        const idx = headerArr.findIndex(h => rxArr.some(rx => rx.test(h)));
+        return idx >= 0 ? idx : null;
+      };
+
+      // trova il primo foglio che abbia "nome" e "ruolo/r."
+      let sheet = null, headerRow = 0, header = null, idx = null;
       for (const name of wb.SheetNames){
         const ws = wb.Sheets[name];
         const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
         if (!aoa || !aoa.length) continue;
         for (let r=0;r<Math.min(10, aoa.length); r++){
           const row = (aoa[r]||[]).map(x=>String(x||'').trim());
-          if (row.includes('Nome') && row.includes('R.')) { sheet = ws; headerRow = r; break; }
+          const iName = matchHeaderIndex(row, HDR.name);
+          const iRole = matchHeaderIndex(row, HDR.role);
+          if (iName != null && iRole != null) {
+            sheet = ws; headerRow = r; header = row;
+            idx = {
+              name: matchHeaderIndex(header, HDR.name),
+              role: matchHeaderIndex(header, HDR.role),
+              team: matchHeaderIndex(header, HDR.team),
+              fm:   matchHeaderIndex(header, HDR.fm),
+              out:  matchHeaderIndex(header, HDR.out),
+            };
+            break;
+          }
         }
         if (sheet) break;
       }
-      if (!sheet) throw new Error('Non trovo intestazioni "Nome" e "R." nel file XLSX');
+      if (!sheet) throw new Error('Intestazioni mancanti: servono almeno Nome e Ruolo/R.');
 
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
-      const header = rows[headerRow].map(x=>String(x||'').trim());
-      const idx = Object.fromEntries(header.map((h,i)=>[h,i]));
-
       const pick = (arr, key) => {
         const i = idx[key];
         return i != null ? arr[i] : '';
@@ -352,18 +389,18 @@ fileInput.onchange = async (e) => {
       const normRows = [];
       for (let r = headerRow + 1; r < rows.length; r++){
         const arr = rows[r] || [];
-        const fuori = String(pick(arr, 'Fuori lista') || '');
+        const fuori = String(pick(arr, 'out') || '');
         if (fuori.includes('*')) continue;
 
-        const nome = String(pick(arr,'Nome') || '').trim();
+        const nome = String(pick(arr,'name') || '').trim();
         if (!nome) continue;
 
-        const ruoloRaw = pick(arr,'R.');
+        const ruoloRaw = pick(arr,'role');
         const ruolo = normalizeRole(ruoloRaw);
         if (!['P','D','C','A'].includes(ruolo)) continue;
 
-        const squadra = String(pick(arr,'Sq.') || '').trim();
-        const fm = numIT(pick(arr,'FM'));
+        const squadra = String(pick(arr,'team') || '').trim();
+        const fm = numIT(pick(arr,'fm'));
 
         normRows.push({ Nome:nome, Squadra:squadra, Ruolo:ruolo, FM:fm });
       }
@@ -398,7 +435,10 @@ fileInput.onchange = async (e) => {
     });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || 'Errore import');
-    notify(`Importati ${j.imported} giocatori`, 'success');
+
+    // <<< Preview validi/scartati >>>
+    notify(`Importati ${j.imported} • Scartati ${j.rejected}`, 'success');
+
   } catch (err) {
     console.error(err);
     notify(err.message || 'Errore import', 'error');
@@ -424,9 +464,45 @@ function numIT(v){
 }
 
 function logoutLocal(){
-  try { localStorage.removeItem('teamSession'); } catch(_){}
-  location.reload();
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('teamSession') || 'null'); } catch(_){}
+
+  // se non c’è sessione salvata, fai solo cleanup
+  if (!saved?.teamId || !saved?.key) {
+    try { localStorage.removeItem('teamSession'); } catch(_){}
+    location.reload();
+    return;
+  }
+
+  // prova a dire al server di rimuovere il team
+  socket.emit('team:leave', {}, (res) => {
+    if (res?.ok) {
+      try { localStorage.removeItem('teamSession'); } catch(_){}
+      location.reload();
+    } else {
+      notify(res?.error || 'Impossibile uscire ora', 'error');
+      // se vuoi forzare solo logout locale senza rimuovere il team, sblocca qui:
+      // try { localStorage.removeItem('teamSession'); } catch(_){}
+      // location.reload();
+    }
+  });
 }
 
-$('btnLogout').onclick = logoutLocal;
+$('btnHostExitAndClose').addEventListener('click', () => {
+  if (!confirm('Confermi? Verranno rimossi partecipanti e aggiudicazioni.')) return;
+  socket.emit('host:exitAndClose', {}, (res) => {
+    if (res?.error) return notify(res.error, 'error');
+    notify('Asta chiusa. Sessione azzerata.', 'info');
+  });
+});
+
+
+document.addEventListener("DOMContentLoaded", () => {
+  const btn =  $('btnLogout');
+  if (btn) {
+     btn.onclick = logoutLocal;
+  }
+})
+
+
 

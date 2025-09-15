@@ -8,11 +8,17 @@ function uid() {
 
 export function makeRoom(id){
   if (rooms.has(id)) return rooms.get(id);
+
   const r = {
     id,
     createdAt: Date.now(),
+    // Sessioni d'asta: ogni volta che chiudi l'asta e resetti, incrementi sessionEpoch
+    sessionEpoch: 1,
+
     hostOwner: null,        // socket.id banditore
     teams: new Map(),       // teamId -> { id,name,credits,acquisitions: [] }
+
+    // Stato asta
     phase: 'LOBBY',         // LOBBY | ROLLING | RUNNING | ARMED | COUNTDOWN | SOLD
     topBid: 0,
     leader: null,           // teamId leader
@@ -20,31 +26,14 @@ export function makeRoom(id){
     countdownSec: 0,
     armMs: 2000,
     lastBuzzBy: {},         // teamId -> ts
-    history: [],            // {id, at, teamId, teamName, price, playerName, role}
 
-    players: [
-      { name: "Donnarumma", role: "P" },
-      { name: "Szczesny", role: "P" },
-      { name: "Theo Hernandez", role: "D" },
-      { name: "Danilo", role: "D" },
-      { name: "Bastoni", role: "D" },
-      { name: "Spinazzola", role: "D" },
-      { name: "Barella", role: "C" },
-      { name: "Tonali", role: "C" },
-      { name: "Pellegrini", role: "C" },
-      { name: "Zaccagni", role: "C" },
-      { name: "Immobile", role: "A" },
-      { name: "Lautaro", role: "A" },
-      { name: "Osimhen", role: "A" },
-      { name: "Dybala", role: "A" },
-      { name: "Leao", role: "A" },
-      { name: "Chiesa", role: "A" },
-      { name: "Berardi", role: "A" },
-      { name: "Raspadori", role: "A" },
-      { name: "Kvaratskhelia", role: "A" },
-      { name: "Zirkzee", role: "A" }
-    ],
+    // Storico SOLO della stanza; ogni entry ora è marcata con sessionEpoch
+    history: [],            // {id, at, sessionEpoch, teamId, teamName, price, playerName, role}
 
+    // Listone: parte vuoto, si popola SOLO via import
+    players: [],
+
+    // Vista filtrata
     filterRole: 'ALL',
     viewPlayers: [],
     currentIndex: 0,
@@ -105,7 +94,7 @@ export function removeCurrentFromMaster(room){
 export function addBackToMaster(room, player){
   // evita doppioni
   const exists = room.players.some(p => p.name === player.name && p.role === player.role);
-  if (!exists) room.players.push({ name: player.name, role: player.role });
+  if (!exists) room.players.push({ name: player.name, role: player.role, team: player.team || '', fm: player.fm });
   rebuildView(room);
 }
 
@@ -115,7 +104,11 @@ export function snapshot(room, perspectiveTeamId = null, socketId = null){
   const youCredits = you ? (room.teams.get(you)?.credits ?? null) : null;
   const acquisitions = you ? (room.teams.get(you)?.acquisitions ?? []) : [];
 
-  const recent = room.history.slice(-12);
+  // Mostra solo le aggiudicazioni della sessione corrente
+  const currentEpoch = room.sessionEpoch || 1;
+  const recent = room.history
+    .filter(h => (h.sessionEpoch || 1) === currentEpoch)
+    .slice(-12);
 
   // prev/next per il rullo
   const n = room.viewPlayers.length;
@@ -125,6 +118,8 @@ export function snapshot(room, perspectiveTeamId = null, socketId = null){
 
   return {
     id: room.id,
+    sessionEpoch: currentEpoch,
+
     phase: room.phase,
     hostLockedBy: room.hostOwner,
 
@@ -152,19 +147,24 @@ export function snapshot(room, perspectiveTeamId = null, socketId = null){
   };
 }
 
-
 export function mkHistoryPending(room){
   if (!room.leader) return null;
-  const id = uid();
-  const t = Date.now();
   const team = room.teams.get(room.leader);
   if (!team) return null;
+
+  const cur = room.viewPlayers[room.currentIndex] || null;
+
   const entry = {
-    id, at: t,
-    teamId: team.id, teamName: team.name,
-    price: room.topBid,
-    playerName: '', role: ''
+    id: uid(),
+    at: Date.now(),
+    sessionEpoch: room.sessionEpoch || 1,  // << marcatura sessione
+    teamId: team.id,
+    teamName: team.name,
+    price: room.topBid || 0,
+    playerName: cur?.name || '',           // subito nome/ruolo correnti
+    role: cur?.role || ''
   };
+
   room.history.push(entry);
   return entry;
 }
@@ -187,15 +187,24 @@ export function serialize(room){
   return {
     id: room.id,
     createdAt: room.createdAt,
+
+    // Sessione corrente
+    sessionEpoch: room.sessionEpoch || 1,
+
     hostOwner: null, // non persistiamo chi è host
+
     teams: [...room.teams.values()].map(t => ({
       id: t.id, name: t.name, credits: t.credits, acquisitions: t.acquisitions || [], key: t.key || null
     })),
+
     phase: room.phase,
     topBid: room.topBid,
     leader: room.leader,
-    history: room.history,
-    players: room.players,
+
+    history: room.history,   // contiene sessionEpoch per ogni voce
+
+    players: room.players,   // nasce vuoto, si popola via import
+
     filterRole: room.filterRole,
     currentIndex: room.currentIndex,
     armMs: room.armMs
@@ -205,24 +214,36 @@ export function serialize(room){
 export function hydrate(room, snap){
   room.id = snap.id;
   room.createdAt = snap.createdAt || Date.now();
+
+  // Sessione
+  room.sessionEpoch = snap.sessionEpoch || 1;
+
+  // Stato asta
   room.phase = snap.phase || 'LOBBY';
   room.topBid = snap.topBid || 0;
   room.leader = snap.leader || null;
+
+  // Storico e listone
   room.history = Array.isArray(snap.history) ? snap.history : [];
   room.players = Array.isArray(snap.players) ? snap.players : [];
+
+  // Vista
   room.filterRole = snap.filterRole || 'ALL';
   room.currentIndex = snap.currentIndex || 0;
   room.armMs = snap.armMs || 2000;
 
+  // Team
   room.teams = new Map();
   for (const t of snap.teams || []) {
     room.teams.set(t.id, { id: t.id, name: t.name, credits: t.credits, acquisitions: t.acquisitions || [], key: t.key || null, socketId: null });
   }
 
+  // Volatili
   room.hostOwner = null;
   room.deadline = 0;
   room.countdownSec = 0;
   room.rolling = false;
   room.lastBuzzBy = {};
+
   rebuildView(room);
 }

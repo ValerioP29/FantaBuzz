@@ -10,10 +10,11 @@ import {
   rebuildView, removeCurrentFromMaster, addBackToMaster, mkHistoryPending,
   serialize, hydrate
 } from './state.js';
-import { saveRoomSnapshot, loadRoomSnapshot } from './storage.js';
+import { saveRoomSnapshot, loadRoomSnapshot, writeBackupFile } from './storage.js';
 import { parseCSV, mapPlayers } from './csv.js';
 import { randomBytes } from 'crypto';
 
+const HOST_PIN = process.env.HOST_PIN || ''; // vuoto = disattivo
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,19 +67,24 @@ app.post('/api/listone/import', (req, res) => {
     if (!csv || typeof csv !== 'string') return res.status(400).json({ ok:false, error:'CSV mancante' });
 
     const { header, items } = parseCSV(csv);
+    const total = items.length;
     const players = mapPlayers(items, map);
-    if (players.length === 0) return res.status(400).json({ ok:false, error:'Nessun giocatore valido' });
+    const imported = players.length;
+    const rejected = Math.max(0, total - imported);
+
+    if (players.length === 0) return res.status(400).json({ ok:false, error:'Nessun giocatore valido', header, imported, rejected });
 
     room.players = players;
     room.currentIndex = 0;
     rebuildView(room);
     saveRoomSnapshot(serialize(room));
     broadcast(room);
-    return res.json({ ok:true, imported: players.length, header });
+    return res.json({ ok:true, imported, rejected, header });
   } catch(e){
     return res.status(500).json({ ok:false, error: e?.message || 'Errore import' });
   }
 });
+
 
 /* ===== API Export ===== */
 app.get('/api/export/teams.csv', (_req, res) => {
@@ -100,6 +106,25 @@ app.get('/api/export/all.json', (_req, res) => {
   const room = rooms.get(ROOM_ID);
   res.json({ teams: [...room.teams.values()], history: room.history, players: room.players });
 });
+
+app.get('/api/export/team/:id.csv', (req, res) => {
+  const room = rooms.get(ROOM_ID);
+  const t = room.teams.get(req.params.id);
+  if (!t) return res.status(404).send('Team non trovato');
+  const rows = [['player','role','price','at']]
+    .concat((t.acquisitions||[]).map(a => [a.player, a.role, a.price, new Date(a.at).toISOString()]));
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.send(rows.map(r => r.join(',')).join('\n'));
+});
+
+app.get('/api/export/remaining.csv', (_req, res) => {
+  const room = rooms.get(ROOM_ID);
+  const rows = [['name','role','team','fm']]
+    .concat(room.players.map(p => [p.name, p.role, p.team || '', p.fm ?? '']));
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.send(rows.map(r => r.join(',')).join('\n'));
+});
+
 
 /* ===== API: Link invito con prefill team opzionale ===== */
 app.get('/api/invite', (req, res) => {
@@ -129,12 +154,15 @@ setInterval(() => {
           // crea entry pending, verrà completata in winner:autoAssign
           mkHistoryPending(room);
           saveRoomSnapshot(serialize(room));
+          // >>> BACKUP TIMESTAMPED QUI <<<
+          try { writeBackupFile(serialize(room)); } catch {}
         }
         broadcast(room);
       }
     }
   }
 }, 150);
+
 
 /* ===== RULLO 2.5s ===== */
 setInterval(() => {
@@ -209,20 +237,23 @@ socket.on('team:resume', ({ teamId, key }, cb) => {
 
 
   /* BANDITORE UNICO */
-  socket.on('host:toggle', (_, cb) => {
-    if (room.hostOwner && room.hostOwner !== socket.id) {
-      return cb && cb({ error: 'Banditore già assegnato' });
-    }
-    if (room.hostOwner === socket.id) {
-      room.hostOwner = null; // rilascio
-      broadcast(room);
-      return cb && cb({ ok: true, host:false });
-    }
-    room.hostOwner = socket.id; // prendo
+ socket.on('host:toggle', ({ pin } = {}, cb) => {
+  if (room.hostOwner && room.hostOwner !== socket.id) {
+    return cb && cb({ error: 'Banditore già assegnato' });
+  }
+  if (!room.hostOwner) {
+    if (HOST_PIN && pin !== HOST_PIN) return cb && cb({ error: 'PIN mancante o errato' });
+    room.hostOwner = socket.id;
     if (room.phase === 'LOBBY') room.phase = 'ROLLING';
     broadcast(room);
-    cb && cb({ ok: true, host:true });
-  });
+    return cb && cb({ ok:true, host:true });
+  } else if (room.hostOwner === socket.id) {
+    room.hostOwner = null;
+    broadcast(room);
+    return cb && cb({ ok:true, host:false });
+  }
+});
+
 
   /* FILTRO RUOLO E RANDOM */
   socket.on('host:setRoleFilter', ({ role }, cb) => {
@@ -359,6 +390,148 @@ socket.on('team:resume', ({ teamId, key }, cb) => {
   socket.on('disconnect', () => {
     if (room.hostOwner === socket.id) { room.hostOwner = null; broadcast(room); }
   });
+  /* USCITA PARTECIPANTE: rimuove il team dalla stanza (solo fuori asta) */
+socket.on('team:leave', (_ , cb) => {
+  try {
+    const tid = socket.data.teamId;
+    if (!tid) return cb && cb({ error: 'Nessuna sessione attiva' });
+
+    // non consentire durante l’asta
+    if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) {
+      return cb && cb({ error: 'Non puoi uscire durante un’asta in corso' });
+    }
+
+    // se era leader resetta eventuale topBid
+    if (room.leader === tid) { room.leader = null; room.topBid = 0; }
+
+    // se era host, libera
+    if (room.hostOwner === socket.id) room.hostOwner = null;
+
+    // rimuovi team
+    room.teams.delete(tid);
+
+    // sgancia il socket
+    socket.data.teamId = null;
+    socket.data.displayName = null;
+
+    saveRoomSnapshot(serialize(room));
+    broadcast(room);
+    cb && cb({ ok: true });
+  } catch (e) {
+    cb && cb({ error: e?.message || 'Errore uscita' });
+  }
+});
+
+/* AGGIORNA PROFILO TEAM (nome/crediti) */
+socket.on('team:updateProfile', ({ name, credits }, cb) => {
+  try {
+    const tid = socket.data.teamId;
+    if (!tid) return cb && cb({ error: 'Nessuna sessione attiva' });
+    const team = room.teams.get(tid);
+    if (!team) return cb && cb({ error: 'Team non trovato' });
+
+    if (typeof name === 'string' && name.trim()) {
+      const base = slugifyName(name);
+      // blocca collisioni con altri team (lo stesso id può cambiare nome)
+      for (const t of room.teams.values()) {
+        if (t.id !== tid && slugifyName(t.name) === base) {
+          return cb && cb({ error: 'Nome già usato da un altro team' });
+        }
+      }
+      team.name = name.trim();
+    }
+
+    if (credits != null) {
+      const c = Number(credits);
+      if (!Number.isFinite(c) || c < 0) return cb && cb({ error: 'Crediti non validi' });
+      team.credits = c;
+    }
+
+    saveRoomSnapshot(serialize(room));
+    broadcast(room);
+    cb && cb({ ok: true, team: { id: team.id, name: team.name, credits: team.credits } });
+  } catch (e) {
+    cb && cb({ error: e?.message || 'Errore aggiornamento profilo' });
+  }
+});
+
+socket.on('host:stopRoll', (_ , cb) => {
+  const room = rooms.get(ROOM_ID);
+  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+  room.rolling = false;
+  if (room.phase === 'ROLLING') room.phase = 'ROLLING'; // resta in ROLLING ma fermo
+  saveRoomSnapshot(serialize(room));
+  broadcast(room);
+  cb && cb({ ok:true });
+});
+
+socket.on('host:undoPurchase', ({ historyId }, cb) => {
+  const room = rooms.get(ROOM_ID);
+  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+  if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Non puoi fare UNDO durante l’asta' });
+
+  const idx = room.history.findIndex(h => h.id === historyId);
+  if (idx < 0) return cb && cb({ error: 'Voce storico non trovata' });
+
+  const h = room.history[idx];
+  if (!h.playerName || !h.role || !h.teamId) return cb && cb({ error: 'Voce incompleta' });
+
+  // 1) restituisci i crediti
+  const team = room.teams.get(h.teamId);
+  if (team) team.credits += (h.price || 0);
+
+  // 2) togli l’acquisto dalla rosa del team
+  if (team && Array.isArray(team.acquisitions)) {
+    const pos = team.acquisitions.findIndex(a => a.player === h.playerName && a.role === h.role && a.price === h.price);
+    if (pos >= 0) team.acquisitions.splice(pos, 1);
+  }
+
+  // 3) rimetti il giocatore nel master
+  addBackToMaster(room, { name: h.playerName, role: h.role });
+
+  // 4) rimuovi la voce di storico
+  room.history.splice(idx, 1);
+
+  // 5) reset eventuali riepiloghi asta ferma
+  if (!['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) {
+    room.topBid = 0; room.leader = null;
+  }
+
+  saveRoomSnapshot(serialize(room));
+  // backup puntuale
+  try { writeBackupFile(serialize(room)); } catch {}
+  broadcast(room);
+  cb && cb({ ok:true });
+});
+
+socket.on('host:exitAndClose', (_ , cb) => {
+  const room = rooms.get(ROOM_ID);
+  if (!room) return cb && cb({ error:'Room inesistente' });
+  if (room.hostOwner !== socket.id) return cb && cb({ error:'Non sei il banditore' });
+
+  // 1) nuova sessione
+  room.sessionEpoch = (room.sessionEpoch || 1) + 1;
+
+  // 2) pulizia partecipanti e aggiudicazioni
+  room.teams = new Map();      // se usi oggetto, fai {}
+  room.history = [];
+
+  // 3) reset banditore e stato gara
+  room.hostOwner = null;
+  room.leader = null;
+  room.topBid = 0;
+  room.deadline = 0;
+  room.countdownSec = 0;
+  room.currentIndex = 0;       // opzionale: riparti dall’inizio del listone
+  room.phase = 'LOBBY';        // o 'ROLLING' se preferisci pre-roll pronto
+
+  saveRoomSnapshot(serialize(room));
+  broadcast(room);
+
+  cb && cb({ ok:true });
+});
+
+
 });
 
 const PORT = process.env.PORT || 8080;
