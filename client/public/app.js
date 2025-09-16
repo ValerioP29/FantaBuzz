@@ -11,6 +11,8 @@ let youAreHost = false;
 
   socket.emit('team:resume', { teamId: saved.teamId, key: saved.key }, (res)=>{
     if (res?.ok) {
+       const myCsv = `/api/export/team/${res.teamId}.csv`;
+       const a = $('btnExportMy'); if (a) a.href = myCsv;
       registered = true;
       $('screenLogin').classList.add('hidden');
       $('screenMain').classList.remove('hidden');
@@ -165,8 +167,24 @@ function resetSummaryUI(){
   $('countdown').textContent = '—';
 }
 
+function applyRollMsUI(s){
+  const sel  = $('hostRollMs');
+  const wrap = $('hostRollSpeedWrap');
+  if (!sel || !wrap) return;
+
+  // Mostra il controllo solo se sei banditore
+  wrap.style.display = s.youAreHost ? '' : 'none';
+
+  // Se lo snapshot porta rollMs, sincronizza il select
+  if (s.rollMs && String(sel.value) !== String(s.rollMs)) {
+    sel.value = String(s.rollMs);
+  }
+}
+
 /* ===== APPLY STATE ===== */
 function applyState(s){
+  window.__last_state = s;
+
   $('phaseBadge').textContent = s.phase || '—';
   youAreHost = !!s.youAreHost;
   $('hostStatus').textContent = youAreHost ? 'Banditore' : 'Partecipante';
@@ -195,6 +213,8 @@ function applyState(s){
   renderParticipantsManage(s);
   renderHistory(s);
   renderAcquisitions(s.acquisitions || []);
+  applyRollMsUI(s);
+
 
   // SOLD → auto-assign client-side (banditore o vincitore)
   window.__soldHandled = window.__soldHandled || false;
@@ -239,8 +259,9 @@ $('btnEnter').onclick = () => {
     if(res?.error){ notify(res.error, 'error'); return; }
 
     // SALVA QUI la sessione per il resume
-    try { localStorage.setItem('teamSession', JSON.stringify({ teamId: res.teamId, key: res.key })); } catch(_){}
-
+      try { localStorage.setItem('teamSession', JSON.stringify({ teamId: res.teamId, key: res.key })); } catch(_){}
+      const myCsv = `/api/export/team/${res.teamId}.csv`;
+      const a = $('btnExportMy'); if (a) a.href = myCsv;
     registered = true;
     $('screenLogin').classList.add('hidden');
     $('screenMain').classList.remove('hidden');
@@ -263,6 +284,20 @@ $('btnHostToggle').onclick = () => {
   socket.emit('host:toggle', payload, (res)=> res?.error ? notify(res.error, 'error')
                                                          : notify(res.host ? 'Hai preso il ruolo di banditore' : 'Hai lasciato il ruolo', 'info'));
 };
+
+/* Velocità rullo: select hostRollMs */
+const rollSel = $('hostRollMs');
+if (rollSel) {
+  rollSel.onchange = () => {
+    const ms = Number(rollSel.value);
+    socket.emit('host:setRollMs', { ms }, (res) => {
+      if (res?.error) return notify(res.error, 'error');
+      notify(`Rullo impostato a ${res.rollMs} ms`, 'info');
+      // niente timer client: è server-driven. Ci basta notificare.
+    });
+  };
+}
+
 
 $('btnRoll').onclick = () =>
   socket.emit('host:toggleRoll', {}, (res)=> res?.error ? notify(res.error, 'error')
@@ -306,18 +341,25 @@ for (const b of document.querySelectorAll('.btn.inc')){
   b.onclick = () => {
     const inc = Number(b.dataset.inc);
     socket.emit('team:bid_inc', { amount: inc }, (res)=>{
-      if(res?.error) notify(res.error, 'error');
+      if(res?.error) return notify(res.error, 'error');
+      if(res?.warn)  notify(res.warn, 'info');
     });
     try{ navigator.vibrate?.(12); }catch(_){}
   };
 }
+
 $('btnFreeBid').onclick = ()=>{
-  const val = Number($('freeBid').value || 0);
+  const el = $('freeBid');
+  const val = Number(el.value || 0);
   socket.emit('team:bid_free', { value: val }, (res)=>{
-    if(res?.error) notify(res.error, 'error');
+    if(res?.error) return notify(res.error, 'error');
+    if(res?.warn)  notify(res.warn, 'info');
+    el.value = '';      // reset
+    el.blur?.();        // togli focus
   });
   try{ navigator.vibrate?.([10,40,10]); }catch(_){}
 };
+
 
 /* ===== Import XLSX/CSV dal browser ===== */
 const btnImport = $('btnImportFile');
@@ -445,6 +487,19 @@ fileInput.onchange = async (e) => {
   } finally {
     e.target.value = '';
   }
+};
+
+$('btnHostSkip').onclick = () =>
+  socket.emit('host:skip', {}, (res)=> res?.error ? notify(res.error,'error') : notify('Avanti di uno','info'));
+
+$('btnHostBackN').onclick = () => {
+  const n = Number(prompt('Quanti indietro?', '1') || '1');
+  socket.emit('host:backN', { n }, (res)=> res?.error ? notify(res.error,'error') : notify(`Indietro di ${n}`,'info'));
+};
+
+$('btnHostPin').onclick = () => {
+  const i = Number(prompt('Indice in lista (0-based):', '0') || '0');
+  socket.emit('host:pinPlayer', { index: i }, (res)=> res?.error ? notify(res.error,'error') : notify('Giocatore fissato','info'));
 };
 
 /* ===== Utils per import lato client ===== */

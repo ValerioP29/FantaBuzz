@@ -6,7 +6,7 @@
   <title>FantaBid 2.9</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0e0f12">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=1">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
 </head>
 <body>
@@ -45,6 +45,20 @@
 
           <div class="row gap">
             <button id="btnHostToggle" class="btn btn-outline">Banditore</button>
+            <div class="row gap">
+              <button id="btnHostSkip" class="btn btn-outline">Salta</button>
+              <button id="btnHostBackN" class="btn btn-outline">Indietro di N</button>
+              <button id="btnHostPin" class="btn btn-outline">Pin giocatore</button>
+            </div>
+            <div class="row gap" id="hostRollSpeedWrap">
+              <label for="hostRollMs">Velocità rullo</label>
+              <select id="hostRollMs" class="btn">
+                <option value="2500">Lento</option>
+                <option value="2000" selected>Medio</option>
+                <option value="1500">Veloce</option>
+              </select>
+            </div>
+
             <button id="btnRoll" class="btn btn-outline">Pausa/Play rullo</button>
           </div>
 
@@ -91,6 +105,11 @@
               <a class="btn btn-outline" href="/api/export/all.json" target="_blank" rel="noopener">Export completo (JSON)</a>
             </div>
           </details>
+          <div class="row gap" style="margin-top:.5rem">
+            <a id="btnExportMy" class="btn btn-outline" href="#" target="_blank" rel="noopener">Export mia rosa (CSV)</a>
+            <a class="btn btn-outline" href="/api/export/remaining.csv" target="_blank" rel="noopener">Listone residuo (CSV)</a>
+          </div>
+
         </div>
       </aside>
 
@@ -138,6 +157,6 @@
   <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
   <!-- SheetJS per lettura XLSX lato client -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=1"></script>
 </body>
 </html>

@@ -25,6 +25,7 @@ export function makeRoom(id){
     deadline: 0,
     countdownSec: 0,
     armMs: 2000,
+    rollMs: 1000, // velocità rullo di default (ms tra un giocatore e il successivo)
     lastBuzzBy: {},         // teamId -> ts
 
     // Storico SOLO della stanza; ogni entry ora è marcata con sessionEpoch
@@ -129,6 +130,7 @@ export function snapshot(room, perspectiveTeamId = null, socketId = null){
 
     timeMs: Math.max(0, room.deadline - Date.now()),
     countdownSec: room.phase === 'COUNTDOWN' ? Math.max(0, room.countdownSec) : 0,
+    rollMs: room.rollMs,
 
     participants: Array.from(room.teams.values()).map(t => ({
       id: t.id, name: t.name, credits: t.credits
@@ -207,7 +209,8 @@ export function serialize(room){
 
     filterRole: room.filterRole,
     currentIndex: room.currentIndex,
-    armMs: room.armMs
+    armMs: room.armMs,
+    rollMs: room.rollMs,
   };
 }
 
@@ -231,6 +234,7 @@ export function hydrate(room, snap){
   room.filterRole = snap.filterRole || 'ALL';
   room.currentIndex = snap.currentIndex || 0;
   room.armMs = snap.armMs || 2000;
+  room.rollMs = snap.rollMs || 1000;
 
   // Team
   room.teams = new Map();
