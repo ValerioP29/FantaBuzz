@@ -36,87 +36,98 @@
 
   <section id="screenMain" class="screen hidden">
     <div class="wrap">
-      <aside class="col col-left">
-        <div class="card">
-          <div class="row space-between">
-            <h2>Controllo</h2>
-            <div class="chip" id="hostStatus">Partecipante</div>
-          </div>
+     <aside class="col col-left">
+  <!-- CONTROLLI (solo per host, nella vista "Controlli") -->
+  <div class="card" id="ctrlCard">
+    <div class="row space-between">
+      <h2>Controllo</h2>
+      <div class="chip" id="hostStatus">Partecipante</div>
+    </div>
 
-          <div class="row gap">
-            <button id="btnHostToggle" class="btn btn-outline">Banditore</button>
-            <div class="row gap">
-              <button id="btnHostSkip" class="btn btn-outline">Salta</button>
-              <button id="btnHostBackN" class="btn btn-outline">Indietro di N</button>
-              <button id="btnHostPin" class="btn btn-outline">Pin giocatore</button>
-            </div>
-            <div class="row gap" id="hostRollSpeedWrap">
-              <label for="hostRollMs">Velocità rullo</label>
-              <select id="hostRollMs" class="btn">
-                <option value="2500">Lento</option>
-                <option value="2000" selected>Medio</option>
-                <option value="1500">Veloce</option>
-              </select>
-            </div>
+    <div class="row gap">
+      <button id="btnHostToggle" class="btn btn-outline">Banditore</button>
+      <div class="row gap">
+        <button id="btnHostSkip" class="btn btn-outline">Salta</button>
+        <button id="btnHostBackN" class="btn btn-outline">Indietro di N</button>
+      </div>
+    </div>
 
-            <button id="btnRoll" class="btn btn-outline">Pausa/Play rullo</button>
-          </div>
+    <div class="rolebar" id="rolebar">
+      <button class="role btn" data-role="P">P</button>
+      <button class="role btn" data-role="D">D</button>
+      <button class="role btn" data-role="C">C</button>
+      <button class="role btn" data-role="A">A</button>
+      <button id="btnRandom" class="btn btn-outline">Random</button>
+      <input id="searchPlayer" class="input" placeholder="Cerca giocatore..." style="margin-left:.5rem; width: 14rem;" />
+    </div>
+  </div>
 
-          <div class="rolebar" id="rolebar">
-            <button class="role btn" data-role="P">P</button>
-            <button class="role btn" data-role="D">D</button>
-            <button class="role btn" data-role="C">C</button>
-            <button class="role btn" data-role="A">A</button>
-            <button id="btnRandom" class="btn btn-outline">Random</button>
-          </div>
-        </div>
+  <!-- PARTECIPANTI (sempre visibile; se sei host compaiono i bottoni Rimuovi) -->
+  <div class="card" id="participantsCard">
+    <details open>
+      <summary class="summary-title">Partecipanti (live)</summary>
+      <ul id="manageList" class="list"></ul>
+    </details>
+  </div>
 
-        <div class="card">
-          <details open>
-            <summary class="summary-title">Partecipanti (live, il banditore può rimuovere)</summary>
-            <ul id="manageList" class="list"></ul>
-          </details>
-        </div>
+  <!-- AGGIUDICAZIONI RECENTI (sempre visibile; se sei host compaiono i bottoni Elimina) -->
+  <div class="card" id="historyCard">
+    <details>
+      <summary class="summary-title">Aggiudicazioni recenti</summary>
+      <ul id="historyList" class="list"></ul>
+    </details>
+  </div>
 
-        <div class="card">
-          <details>
-            <summary class="summary-title">Aggiudicazioni recenti</summary>
-            <ul id="historyList" class="list"></ul>
-          </details>
-        </div>
+  <!-- IMPORT / EXPORT (solo per host, nella vista "Controlli") -->
+  <div class="card" id="importCard">
+    <details open>
+      <summary class="summary-title">Import/Export</summary>
 
-        <div class="card">
-          <details open>
-            <summary class="summary-title">Import/Export</summary>
+      <div class="row gap">
+        <button id="btnImportFile" class="btn btn-primary">Importa XLSX/CSV</button>
+        <input id="fileImport" type="file" accept=".xlsx,.csv" style="display:none" />
+      </div>
 
-            <div class="row gap">
-              <button id="btnImportFile" class="btn btn-primary">Importa XLSX/CSV</button>
-              <input id="fileImport" type="file" accept=".xlsx,.csv" style="display:none" />
-            </div>
+      <div class="muted" style="margin-top:.5rem">
+        Atteso Excel con colonne: <code>Nome</code>, <code>Fuori lista</code>, <code>Sq.</code>, <code>R.</code>, <code>FM</code>.
+        Le righe con <code>Fuori lista = *</code> vengono scartate. <code>R.</code> normalizzato in P/D/C/A. <code>FM</code> accetta la virgola.
+      </div>
 
-            <div class="muted" style="margin-top:.5rem">
-              Atteso Excel con colonne: <code>Nome</code>, <code>Fuori lista</code>, <code>Sq.</code>, <code>R.</code>, <code>FM</code>.
-              Le righe con <code>Fuori lista = *</code> vengono scartate. <code>R.</code> normalizzato in P/D/C/A. <code>FM</code> accetta la virgola.
-            </div>
+      <div class="row gap" style="margin-top:.75rem">
+        <a class="btn btn-outline" href="/api/export/teams.csv" target="_blank" rel="noopener">Export squadre (CSV)</a>
+        <a class="btn btn-outline" href="/api/export/history.csv" target="_blank" rel="noopener">Export aggiudicazioni (CSV)</a>
+        <a class="btn btn-outline" href="/api/export/all.json" target="_blank" rel="noopener">Export completo (JSON)</a>
+      </div>
+    </details>
+    <div class="row gap" style="margin-top:.5rem">
+      <a id="btnExportMy" class="btn btn-outline" href="#" target="_blank" rel="noopener">Export mia rosa (CSV)</a>
+      <a class="btn btn-outline" href="/api/export/remaining.csv" target="_blank" rel="noopener">Listone residuo (CSV)</a>
+    </div>
+  </div>
+</aside>
 
-            <div class="row gap" style="margin-top:.75rem">
-              <a class="btn btn-outline" href="/api/export/teams.csv" target="_blank" rel="noopener">Export squadre (CSV)</a>
-              <a class="btn btn-outline" href="/api/export/history.csv" target="_blank" rel="noopener">Export aggiudicazioni (CSV)</a>
-              <a class="btn btn-outline" href="/api/export/all.json" target="_blank" rel="noopener">Export completo (JSON)</a>
-            </div>
-          </details>
-          <div class="row gap" style="margin-top:.5rem">
-            <a id="btnExportMy" class="btn btn-outline" href="#" target="_blank" rel="noopener">Export mia rosa (CSV)</a>
-            <a class="btn btn-outline" href="/api/export/remaining.csv" target="_blank" rel="noopener">Listone residuo (CSV)</a>
-          </div>
-
-        </div>
-      </aside>
 
       <main class="col col-right">
         <div class="card highlight">
-          <div class="row space-between">
-            <h2>Riepilogo</h2>
+        <div class="row space-between">
+        <h2>Riepilogo</h2>
+
+        <!-- Switch host -->
+        <div id="hostViewSwitch" class="row gap" style="display:none">
+          <button id="btnHostViewSummary" class="btn btn-outline">Riepilogo</button>
+          <button id="btnHostViewControls" class="btn">Controlli</button>
+        </div>
+
+            <div id="rollControls" class="row gap" style="margin-top:.5rem; display:none">
+              <button id="btnRollToggle" class="btn">Play/Pausa rullo</button>
+              <label for="hostRollMs" style="margin-left:.5rem">Velocità</label>
+              <select id="hostRollMs" class="btn">
+                <option value="2000" selected>Medio</option>
+                <option value="1000">Veloce</option>
+                <option value="600">Molto veloce</option>
+                <option value="400">Pazzo</option>
+              </select>
+            </div>
             <div class="badge" id="phaseBadge">LOBBY</div>
           </div>
 

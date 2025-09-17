@@ -25,6 +25,14 @@ let youAreHost = false;
   });
 })();
 
+const hostToken = localStorage.getItem('hostToken');
+if (hostToken) {
+  socket.emit('host:reclaim', { token: hostToken }, (res)=>{
+    if(res?.ok) notify('Ruolo banditore ripristinato','info');
+  });
+}
+
+
 (function prefillFromQuery(){
   try {
     const q = new URLSearchParams(location.search);
@@ -169,17 +177,34 @@ function resetSummaryUI(){
 
 function applyRollMsUI(s){
   const sel  = $('hostRollMs');
-  const wrap = $('hostRollSpeedWrap');
-  if (!sel || !wrap) return;
+  const box  = $('rollControls');
+  if (!sel || !box) return;
 
-  // Mostra il controllo solo se sei banditore
-  wrap.style.display = s.youAreHost ? '' : 'none';
+  // mostra i controlli rullo solo all'host
+  box.style.display = s.youAreHost ? '' : 'none';
 
-  // Se lo snapshot porta rollMs, sincronizza il select
+  // sync valore dal server
   if (s.rollMs && String(sel.value) !== String(s.rollMs)) {
     sel.value = String(s.rollMs);
   }
 }
+
+function applyHostPanels(s){
+  // partecipanti e storico: SEMPRE visibili per tutti
+  if (cardParticipants) cardParticipants.style.display = '';
+  if (cardHistory) cardHistory.style.display = '';
+
+  // controlli + import: solo host e solo nella vista "controls"
+  const showControls = s.youAreHost && __hostView === 'controls';
+  if (cardCtrl) cardCtrl.style.display = showControls ? '' : 'none';
+  if (cardImport) cardImport.style.display = showControls ? '' : 'none';
+
+  // switch host: visibile solo se host
+  const sw = $('hostViewSwitch');
+  if (sw) sw.style.display = s.youAreHost ? '' : 'none';
+}
+
+
 
 /* ===== APPLY STATE ===== */
 function applyState(s){
@@ -195,10 +220,8 @@ function applyState(s){
   $('btnHostToggle').title = hostLockedByOther ? 'Banditore già assegnato' : '';
 
   const duringAuction = ['RUNNING','ARMED','COUNTDOWN'].includes(s.phase);
-  $('btnRoll').disabled = !youAreHost || duringAuction;
+$('btnRollToggle').disabled = !youAreHost || duringAuction;
 
-  // Slot
-  const currentName = s.currentPlayer?.name || null;
     // Slot
     drawSlotWindow(s.currentPlayer, s.prevPlayer, s.nextPlayer);
 
@@ -214,6 +237,9 @@ function applyState(s){
   renderHistory(s);
   renderAcquisitions(s.acquisitions || []);
   applyRollMsUI(s);
+  syncSearchVisibility(s);
+  applyHostPanels(s);
+
 
 
   // SOLD → auto-assign client-side (banditore o vincitore)
@@ -281,9 +307,18 @@ $('btnHostToggle').onclick = () => {
     const pin = prompt('PIN banditore (se configurato):') || '';
     payload.pin = pin; document.body.dataset.hostPinAsked = '1';
   }
-  socket.emit('host:toggle', payload, (res)=> res?.error ? notify(res.error, 'error')
-                                                         : notify(res.host ? 'Hai preso il ruolo di banditore' : 'Hai lasciato il ruolo', 'info'));
+  socket.emit('host:toggle', payload, (res)=>{
+    if(res?.error) return notify(res.error, 'error');
+    if (res.host && res.hostToken) {
+      try { localStorage.setItem('hostToken', res.hostToken); } catch(_){}
+      notify('Hai preso il ruolo di banditore', 'info');
+    } else if (!res.host) {
+      try { localStorage.removeItem('hostToken'); } catch(_){}
+      notify('Hai lasciato il ruolo', 'info');
+    }
+  });
 };
+
 
 /* Velocità rullo: select hostRollMs */
 const rollSel = $('hostRollMs');
@@ -299,9 +334,13 @@ if (rollSel) {
 }
 
 
-$('btnRoll').onclick = () =>
-  socket.emit('host:toggleRoll', {}, (res)=> res?.error ? notify(res.error, 'error')
-                                                        : notify(res.rolling ? 'Rullo in riproduzione' : 'Rullo in pausa', 'info'));
+$('btnRollToggle')?.addEventListener('click', () => {
+  socket.emit('host:toggleRoll', {}, (res)=> {
+    if(res?.error) notify(res.error, 'error');
+    else notify(res.rolling ? 'Rullo in riproduzione' : 'Rullo in pausa', 'info');
+  });
+});
+
 
 /* Filtri ruolo toggle */
 document.querySelectorAll('.rolebar .role').forEach(b => {
@@ -339,6 +378,8 @@ $('btnRandom').onclick = () => {
 /* ===== Offerte ===== */
 for (const b of document.querySelectorAll('.btn.inc')){
   b.onclick = () => {
+    b.classList.add('pressed');
+    setTimeout(()=> b.classList.remove('pressed'), 120);
     const inc = Number(b.dataset.inc);
     socket.emit('team:bid_inc', { amount: inc }, (res)=>{
       if(res?.error) return notify(res.error, 'error');
@@ -497,11 +538,6 @@ $('btnHostBackN').onclick = () => {
   socket.emit('host:backN', { n }, (res)=> res?.error ? notify(res.error,'error') : notify(`Indietro di ${n}`,'info'));
 };
 
-$('btnHostPin').onclick = () => {
-  const i = Number(prompt('Indice in lista (0-based):', '0') || '0');
-  socket.emit('host:pinPlayer', { index: i }, (res)=> res?.error ? notify(res.error,'error') : notify('Giocatore fissato','info'));
-};
-
 /* ===== Utils per import lato client ===== */
 function normalizeRole(v){
   const s = String(v||'').trim().toUpperCase();
@@ -517,6 +553,20 @@ function numIT(v){
   const n = Number(String(v).replace(',', '.').replace(/\s/g,''));
   return Number.isFinite(n) ? n : '';
 }
+
+$('searchPlayer')?.addEventListener('input', (e)=>{
+  const q = e.target.value || '';
+  socket.emit('host:setFilterName', { q }, (res)=>{
+    if(res?.error) notify(res.error,'error');
+  });
+});
+
+// Solo host vede l’input
+function syncSearchVisibility(s){
+  const el = $('searchPlayer');
+  if (el) el.style.display = s.youAreHost ? '' : 'none';
+}
+
 
 function logoutLocal(){
   let saved = null;
@@ -547,9 +597,14 @@ $('btnHostExitAndClose').addEventListener('click', () => {
   if (!confirm('Confermi? Verranno rimossi partecipanti e aggiudicazioni.')) return;
   socket.emit('host:exitAndClose', {}, (res) => {
     if (res?.error) return notify(res.error, 'error');
+    try {
+      localStorage.removeItem('hostToken'); // <<< AGGIUNGI QUESTO
+    } catch(_) {}
     notify('Asta chiusa. Sessione azzerata.', 'info');
+    location.reload(); // <<< meglio forzare reset
   });
 });
+
 
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -558,6 +613,41 @@ document.addEventListener("DOMContentLoaded", () => {
      btn.onclick = logoutLocal;
   }
 })
+
+  socket.on('you:kicked', ()=>{
+  try {
+    localStorage.removeItem('teamSession');
+    localStorage.removeItem('hostToken');
+  } catch(_){}
+  location.href = '/';
+});
+
+
+const vAside = document.querySelector('aside.col-left');
+const cardCtrl = $('ctrlCard');
+const cardImport = $('importCard');
+const cardParticipants = $('participantsCard');
+const cardHistory = $('historyCard');
+
+let __hostView = 'summary'; // 'summary' | 'controls'
+
+
+function applyHostViewSwitch(s){
+  const sw = $('hostViewSwitch');
+  if (sw) sw.style.display = s.youAreHost ? '' : 'none';
+}
+
+$('btnHostViewSummary')?.addEventListener('click', ()=>{
+  __hostView = 'summary';
+  if (window.__last_state) applyHostPanels(window.__last_state);
+});
+
+$('btnHostViewControls')?.addEventListener('click', ()=>{
+  __hostView = 'controls';
+  if (window.__last_state) applyHostPanels(window.__last_state);
+});
+
+
 
 
 

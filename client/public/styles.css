@@ -1,13 +1,13 @@
 /* ===== Leghe-style chiaro ===== */
 :root{
   /* Base chiara */
-  --bg:#f2f5f9;            /* sfondo pagina */
+  --bg:#989a9c;            /* sfondo pagina */
   --surface:#ffffff;       /* card bianche */
   --surface-2:#ffffff;
 
   /* Testi */
   --text:#0f172a;          /* quasi nero */
-  --muted:#6b7280;         /* grigio descrizioni */
+  --muted:#363940;         /* grigio descrizioni */
 
   /* Blu/azzurri tipici app */
   --brand-top-start:#243b77;   /* header blu scuro */
@@ -21,7 +21,7 @@
   --primary-text:#083042;   /* testo scuro su cta */
 
   /* Bordi/ombre */
-  --outline:#e2e8f0;       /* grigio bordi chiari */
+  --outline:#a7c8f2;       /* grigio bordi chiari */
   --shadow:0 8px 24px rgba(15, 23, 42, .08);
 
   /* Stati */
@@ -111,6 +111,13 @@ body{
 .btn:focus-visible{
   outline:2px solid var(--accent);
   outline-offset:2px;
+}
+
+.btn.inc { transition: transform .08s ease, background-color .1s ease, color .1s ease; }
+.btn.inc.pressed {
+  background: #111827 !important; /* nero blu scuro */
+  color: #fff !important;
+  transform: scale(0.94);
 }
 
 /* CTA azzurre come nello screen */

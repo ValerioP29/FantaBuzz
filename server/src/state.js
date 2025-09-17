@@ -38,7 +38,9 @@ export function makeRoom(id){
     filterRole: 'ALL',
     viewPlayers: [],
     currentIndex: 0,
-    rolling: false
+    rolling: false,
+    filterName: '', // nuovo
+
   };
 
   rebuildView(r);
@@ -48,10 +50,15 @@ export function makeRoom(id){
 
 export function rebuildView(room, startLetter /* opzionale: 'A'..'Z' */){
   const src = room.players.slice();
+
+  // Filtro per ruolo + NOME (nuovo)
+  const nameQ = (room.filterName || '').trim().toUpperCase();
   let list = room.filterRole === 'ALL'
     ? src
     : src.filter(p => p.role === room.filterRole);
+  if (nameQ) list = list.filter(p => p.name.toUpperCase().includes(nameQ));
 
+  // Ordina alfabetico
   list.sort((a, b) => a.name.localeCompare(b.name, 'it', { sensitivity: 'base' }));
   room.viewPlayers = list;
 
@@ -83,6 +90,7 @@ export function rebuildView(room, startLetter /* opzionale: 'A'..'Z' */){
   room.currentIndex = idx >= 0 ? idx : 0;
   return { usedStart: idx >= 0 ? L : null };
 }
+
 
 export function removeCurrentFromMaster(room){
   const cp = room.viewPlayers[room.currentIndex];
