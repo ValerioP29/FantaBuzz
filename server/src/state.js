@@ -121,9 +121,44 @@ export function removeCurrentFromMaster(room){
 }
 
 export function addBackToMaster(room, player){
-  // evita doppioni
-  const exists = room.players.some(p => p.name === player.name && p.role === player.role);
-  if (!exists) room.players.push({ name: player.name, role: player.role, team: player.team || '', fm: player.fm });
+  if (!player || !player.name || !player.role) {
+    rebuildView(room);
+    return;
+  }
+
+  const normTeam = typeof player.team === 'string' ? player.team.trim() : player.team;
+  const hasTeam = normTeam !== undefined && normTeam !== null && String(normTeam).trim() !== '';
+  const teamValue = hasTeam ? String(normTeam).trim() : '';
+
+  const hasFm = player.fm !== undefined && player.fm !== null && String(player.fm).trim() !== '';
+  const fmValue = hasFm ? String(player.fm).trim() : null;
+
+  const exists = room.players.some(p => {
+    if (!p) return false;
+    if ((p.name || '') !== player.name || (p.role || '') !== player.role) return false;
+
+    if (hasTeam) {
+      const pt = p.team !== undefined && p.team !== null ? String(p.team).trim() : '';
+      if (pt !== teamValue) return false;
+    }
+
+    if (hasFm) {
+      const pfm = p.fm !== undefined && p.fm !== null ? String(p.fm).trim() : null;
+      if (pfm !== fmValue) return false;
+    }
+
+    return true;
+  });
+
+  if (!exists) {
+    const toAdd = {
+      name: player.name,
+      role: player.role,
+      team: hasTeam ? teamValue : String(player?.team ?? '').trim(),
+      fm: hasFm ? player.fm : (player?.fm ?? null)
+    };
+    room.players.push(toAdd);
+  }
   rebuildView(room);
 }
 
