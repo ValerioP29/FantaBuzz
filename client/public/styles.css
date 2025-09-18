@@ -72,6 +72,20 @@ body{
   margin:0 auto;
 }
 
+.wrap[data-host-view="controls"]{
+  grid-template-columns: 1fr;
+}
+
+.wrap[data-host-view="controls"] .col-main{
+  display:none;
+}
+
+.wrap[data-host-view="controls"] .col-left{
+  grid-column:1 / -1;
+}
+
+.col{ display:flex; flex-direction:column; gap:18px; }
+
 .col .card,
 .card-lg{
   background: var(--surface);
@@ -190,9 +204,39 @@ body{
 }
 
 /* Summary */
+.summary-card{
+  padding:16px 18px 20px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.host-switch{ display:flex; gap:8px; flex-wrap:wrap; }
+.host-switch .btn{ min-height:38px; padding:0 14px; }
+.host-switch .btn.active{
+  background: linear-gradient(180deg, #7dd3fc, #38bdf8);
+  color:#05263a;
+  border-color:#38bdf8;
+  font-weight:700;
+  box-shadow:0 0 0 1px rgba(56,189,248,.25);
+}
+
+.roll-controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+.roll-controls label{ font-size:.85rem; color:var(--muted); }
+.roll-controls .btn,
+.roll-controls select{ min-height:38px; padding:0 14px; }
+
+.host-switch-bar{
+  width:min(1200px, 100%);
+  margin:0 auto 12px;
+  justify-content:flex-end;
+  padding:0 16px;
+}
+
 .summary{
-  margin-top:12px;
-  display:grid; gap:12px;
+  margin-top:4px;
+  display:grid;
+  gap:10px;
   grid-template-columns: repeat(4, 1fr);
 }
 .summary-item .label{ font-size:12px; color:var(--muted) }
@@ -234,7 +278,7 @@ body{
 /* ===== Slot/rullo azzurrino ===== */
 .slot {
   position: relative;
-  height: 340px;
+  height: 300px;
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -291,7 +335,7 @@ body{
 
 @media (max-width: 1280px){
   .wrap{ width: min(1100px, 100%); gap:20px }
-  .slot{ height: 330px }
+  .slot{ height: 280px }
 }
 @media (max-width: 1024px){
   .wrap{ grid-template-columns: 1fr 1fr; width:min(980px, 100%) }
@@ -307,11 +351,12 @@ body{
     width:100%;
     padding:12px;
   }
+  .host-switch-bar{ justify-content:center; padding:0 12px; }
   .grid{ grid-template-columns: 1fr }
   .card-lg{ max-width:100%; padding:18px }
   .summary{ grid-template-columns: repeat(2, 1fr) }
   .bids{ grid-template-columns: repeat(3, minmax(80px,1fr)) 1fr }
-  .slot{ height: 300px }
+  .slot{ height: 240px }
   .topbar{ padding: 10px 12px }
   .btn{ min-height:44px; padding:0 14px }
 }
@@ -321,6 +366,6 @@ body{
     grid-auto-rows: minmax(44px, auto);
   }
   .freebid{ grid-column: 1 / -1 }
-  .slot{ height: 280px }
+  .slot{ height: 210px }
   .rolebar .role{ min-width:56px }
 }

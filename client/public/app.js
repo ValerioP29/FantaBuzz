@@ -1,5 +1,28 @@
 /* global Toastify, XLSX */
-const socket = io();
+let storedHostToken = null;
+try {
+  storedHostToken = localStorage.getItem('hostToken');
+} catch (_) {}
+
+let clientId = null;
+try {
+  clientId = localStorage.getItem('clientId');
+  if (!clientId) {
+    const gen = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    clientId = gen;
+    localStorage.setItem('clientId', clientId);
+  }
+} catch (_) {}
+
+const socketAuth = {};
+if (clientId) socketAuth.clientId = clientId;
+if (storedHostToken) socketAuth.hostToken = storedHostToken;
+
+const socket = io({ auth: socketAuth });
+socket.auth = socket.auth || {};
+Object.assign(socket.auth, socketAuth);
 let registered = false;
 let youAreHost = false;
 
@@ -25,9 +48,8 @@ let youAreHost = false;
   });
 })();
 
-const hostToken = localStorage.getItem('hostToken');
-if (hostToken) {
-  socket.emit('host:reclaim', { token: hostToken }, (res)=>{
+if (storedHostToken) {
+  socket.emit('host:reclaim', { token: storedHostToken }, (res)=>{
     if(res?.ok) notify('Ruolo banditore ripristinato','info');
   });
 }
@@ -180,8 +202,8 @@ function applyRollMsUI(s){
   const box  = $('rollControls');
   if (!sel || !box) return;
 
-  // mostra i controlli rullo solo all'host
-  box.style.display = s.youAreHost ? '' : 'none';
+  const canShow = s.youAreHost && __hostView === 'controls';
+  box.style.display = canShow ? '' : 'none';
 
   // sync valore dal server
   if (s.rollMs && String(sel.value) !== String(s.rollMs)) {
@@ -190,18 +212,30 @@ function applyRollMsUI(s){
 }
 
 function applyHostPanels(s){
-  // partecipanti e storico: SEMPRE visibili per tutti
+  if (!s.youAreHost && __hostView !== 'summary') {
+    __hostView = 'summary';
+  }
+
+  const isControlsView = s.youAreHost && __hostView === 'controls';
+
+  if (cardCtrl) cardCtrl.style.display = isControlsView ? '' : 'none';
+  if (cardImport) cardImport.style.display = isControlsView ? '' : 'none';
   if (cardParticipants) cardParticipants.style.display = '';
   if (cardHistory) cardHistory.style.display = '';
 
-  // controlli + import: solo host e solo nella vista "controls"
-  const showControls = s.youAreHost && __hostView === 'controls';
-  if (cardCtrl) cardCtrl.style.display = showControls ? '' : 'none';
-  if (cardImport) cardImport.style.display = showControls ? '' : 'none';
-
-  // switch host: visibile solo se host
   const sw = $('hostViewSwitch');
   if (sw) sw.style.display = s.youAreHost ? '' : 'none';
+
+  const wrap = $('mainWrap');
+  if (wrap) wrap.dataset.hostView = isControlsView ? 'controls' : 'summary';
+
+  const btnSummary = $('btnHostViewSummary');
+  const btnControls = $('btnHostViewControls');
+  if (btnSummary) btnSummary.classList.toggle('active', __hostView === 'summary' || !s.youAreHost);
+  if (btnControls) {
+    btnControls.classList.toggle('active', isControlsView);
+    btnControls.disabled = !s.youAreHost;
+  }
 }
 
 
@@ -210,7 +244,6 @@ function applyHostPanels(s){
 function applyState(s){
   window.__last_state = s;
 
-  $('phaseBadge').textContent = s.phase || '—';
   youAreHost = !!s.youAreHost;
   $('hostStatus').textContent = youAreHost ? 'Banditore' : 'Partecipante';
 
@@ -220,10 +253,10 @@ function applyState(s){
   $('btnHostToggle').title = hostLockedByOther ? 'Banditore già assegnato' : '';
 
   const duringAuction = ['RUNNING','ARMED','COUNTDOWN'].includes(s.phase);
-$('btnRollToggle').disabled = !youAreHost || duringAuction;
+  $('btnRollToggle').disabled = !youAreHost || duringAuction;
 
-    // Slot
-    drawSlotWindow(s.currentPlayer, s.prevPlayer, s.nextPlayer);
+  // Slot
+  drawSlotWindow(s.currentPlayer, s.prevPlayer, s.nextPlayer);
 
   // Riepilogo
   $('sumBid').textContent = s.topBid;
@@ -236,9 +269,9 @@ $('btnRollToggle').disabled = !youAreHost || duringAuction;
   renderParticipantsManage(s);
   renderHistory(s);
   renderAcquisitions(s.acquisitions || []);
+  applyHostPanels(s);
   applyRollMsUI(s);
   syncSearchVisibility(s);
-  applyHostPanels(s);
 
 
 
@@ -305,15 +338,25 @@ $('btnHostToggle').onclick = () => {
   const payload = {};
   if (!document.body.dataset.hostPinAsked) {
     const pin = prompt('PIN banditore (se configurato):') || '';
-    payload.pin = pin; document.body.dataset.hostPinAsked = '1';
+    payload.pin = pin;
   }
   socket.emit('host:toggle', payload, (res)=>{
-    if(res?.error) return notify(res.error, 'error');
+    if(res?.error) {
+      delete document.body.dataset.hostPinAsked;
+      return notify(res.error, 'error');
+    }
     if (res.host && res.hostToken) {
+      document.body.dataset.hostPinAsked = '1';
       try { localStorage.setItem('hostToken', res.hostToken); } catch(_){}
+      socket.auth = socket.auth || {};
+      socket.auth.hostToken = res.hostToken;
       notify('Hai preso il ruolo di banditore', 'info');
     } else if (!res.host) {
+      delete document.body.dataset.hostPinAsked;
       try { localStorage.removeItem('hostToken'); } catch(_){}
+      if (socket?.auth && 'hostToken' in socket.auth) {
+        delete socket.auth.hostToken;
+      }
       notify('Hai lasciato il ruolo', 'info');
     }
   });
@@ -564,7 +607,9 @@ $('searchPlayer')?.addEventListener('input', (e)=>{
 // Solo host vede l’input
 function syncSearchVisibility(s){
   const el = $('searchPlayer');
-  if (el) el.style.display = s.youAreHost ? '' : 'none';
+  if (!el) return;
+  const canShow = s.youAreHost && __hostView === 'controls';
+  el.style.display = canShow ? '' : 'none';
 }
 
 
@@ -600,6 +645,9 @@ $('btnHostExitAndClose').addEventListener('click', () => {
     try {
       localStorage.removeItem('hostToken'); // <<< AGGIUNGI QUESTO
     } catch(_) {}
+    if (socket?.auth && 'hostToken' in socket.auth) {
+      delete socket.auth.hostToken;
+    }
     notify('Asta chiusa. Sessione azzerata.', 'info');
     location.reload(); // <<< meglio forzare reset
   });
@@ -619,6 +667,9 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.removeItem('teamSession');
     localStorage.removeItem('hostToken');
   } catch(_){}
+  if (socket?.auth && 'hostToken' in socket.auth) {
+    delete socket.auth.hostToken;
+  }
   location.href = '/';
 });
 
@@ -639,12 +690,20 @@ function applyHostViewSwitch(s){
 
 $('btnHostViewSummary')?.addEventListener('click', ()=>{
   __hostView = 'summary';
-  if (window.__last_state) applyHostPanels(window.__last_state);
+  if (window.__last_state) {
+    applyHostPanels(window.__last_state);
+    applyRollMsUI(window.__last_state);
+    syncSearchVisibility(window.__last_state);
+  }
 });
 
 $('btnHostViewControls')?.addEventListener('click', ()=>{
   __hostView = 'controls';
-  if (window.__last_state) applyHostPanels(window.__last_state);
+  if (window.__last_state) {
+    applyHostPanels(window.__last_state);
+    applyRollMsUI(window.__last_state);
+    syncSearchVisibility(window.__last_state);
+  }
 });
 
 

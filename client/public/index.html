@@ -35,7 +35,11 @@
   </section>
 
   <section id="screenMain" class="screen hidden">
-    <div class="wrap">
+    <div id="hostViewSwitch" class="host-switch host-switch-bar" style="display:none">
+      <button id="btnHostViewSummary" class="btn btn-outline">Riepilogo</button>
+      <button id="btnHostViewControls" class="btn btn-outline">Controlli</button>
+    </div>
+    <div class="wrap" id="mainWrap" data-host-view="summary">
      <aside class="col col-left">
   <!-- CONTROLLI (solo per host, nella vista "Controlli") -->
   <div class="card" id="ctrlCard">
@@ -50,6 +54,17 @@
         <button id="btnHostSkip" class="btn btn-outline">Salta</button>
         <button id="btnHostBackN" class="btn btn-outline">Indietro di N</button>
       </div>
+    </div>
+
+    <div id="rollControls" class="roll-controls" style="display:none">
+      <button id="btnRollToggle" class="btn">Play/Pausa rullo</button>
+      <label for="hostRollMs">Velocità</label>
+      <select id="hostRollMs" class="btn">
+        <option value="2000" selected>Medio</option>
+        <option value="1000">Veloce</option>
+        <option value="600">Molto veloce</option>
+        <option value="400">Pazzo</option>
+      </select>
     </div>
 
     <div class="rolebar" id="rolebar">
@@ -107,29 +122,8 @@
 </aside>
 
 
-      <main class="col col-right">
-        <div class="card highlight">
-        <div class="row space-between">
-        <h2>Riepilogo</h2>
-
-        <!-- Switch host -->
-        <div id="hostViewSwitch" class="row gap" style="display:none">
-          <button id="btnHostViewSummary" class="btn btn-outline">Riepilogo</button>
-          <button id="btnHostViewControls" class="btn">Controlli</button>
-        </div>
-
-            <div id="rollControls" class="row gap" style="margin-top:.5rem; display:none">
-              <button id="btnRollToggle" class="btn">Play/Pausa rullo</button>
-              <label for="hostRollMs" style="margin-left:.5rem">Velocità</label>
-              <select id="hostRollMs" class="btn">
-                <option value="2000" selected>Medio</option>
-                <option value="1000">Veloce</option>
-                <option value="600">Molto veloce</option>
-                <option value="400">Pazzo</option>
-              </select>
-            </div>
-            <div class="badge" id="phaseBadge">LOBBY</div>
-          </div>
+      <main class="col col-right col-main">
+        <div class="card highlight summary-card">
 
          <div class="slot" aria-live="polite" aria-atomic="true">
             <div class="slot-inner" id="slotInner"></div>
