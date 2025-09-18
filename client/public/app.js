@@ -238,8 +238,6 @@ function applyHostPanels(s){
   }
 }
 
-
-
 /* ===== APPLY STATE ===== */
 function applyState(s){
   window.__last_state = s;
@@ -254,6 +252,22 @@ function applyState(s){
 
   const duringAuction = ['RUNNING','ARMED','COUNTDOWN'].includes(s.phase);
   $('btnRollToggle').disabled = !youAreHost || duringAuction;
+
+  const filtersLockedMsg = 'Puoi cambiare filtri solo quando l’asta è ferma o dopo l’assegnazione.';
+  const searchInput = $('searchPlayer');
+  if (searchInput) {
+    searchInput.disabled = duringAuction;
+    searchInput.title = duringAuction ? filtersLockedMsg : '';
+  }
+  document.querySelectorAll('.rolebar .role').forEach((btn) => {
+    btn.disabled = duringAuction;
+    btn.title = duringAuction ? filtersLockedMsg : '';
+  });
+  const btnRandom = $('btnRandom');
+  if (btnRandom) {
+    btnRandom.disabled = duringAuction;
+    btnRandom.title = duringAuction ? filtersLockedMsg : '';
+  }
 
   // Slot
   drawSlotWindow(s.currentPlayer, s.prevPlayer, s.nextPlayer);
