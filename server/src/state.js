@@ -127,12 +127,6 @@ export function addBackToMaster(room, player){
     return;
   }
 
-export function addBackToMaster(room, player){
-  if (!player || !player.name || !player.role) {
-    rebuildView(room);
-    return;
-  }
-
   const normName = String(player.name).trim();
   const normRole = String(player.role).trim();
   const normTeam = player.team != null ? String(player.team).trim() : '';
@@ -172,9 +166,6 @@ export function addBackToMaster(room, player){
       fm: hasFm ? player.fm : (player.fm ?? null)
     });
   }
-
-  rebuildView(room);
-}
 
   rebuildView(room);
 }
