@@ -17,8 +17,7 @@ export function makeRoom(id){
 
     hostOwner: null,        // socket.id banditore
     hostOwnerClientId: null,
-    teams: new Map(),       // teamId -> { id,name,credits,acquisitions: [] }
-
+    hostToken: null,
     // Stato asta
     phase: 'LOBBY',         // LOBBY | ROLLING | RUNNING | ARMED | COUNTDOWN | SOLD
     topBid: 0,
@@ -320,8 +319,7 @@ export function hydrate(room, snap){
   // Volatili
   room.hostOwner = null;
   room.hostOwnerClientId = null;
-  room.deadline = 0;
-  room.countdownSec = 0;
+  room.hostToken = null;
   room.rolling = false;
   room.lastBuzzBy = {};
   room.autoAssignError = null;

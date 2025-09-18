@@ -56,6 +56,11 @@ const now = () => Date.now();
 
 function makeKey(){ return crypto.randomBytes(16).toString('hex'); }
 
+function issueHostToken(room) {
+  const token = crypto.randomBytes(16).toString('hex');
+  room.hostToken = token;
+  return token;
+}
 
 function broadcast(room){
   for (const [, s] of io.of('/').sockets) {
@@ -410,11 +415,6 @@ setInterval(() => {
   }
 }, 120);
 
-function ensureHostToken(room){
-  if(!room.hostToken) room.hostToken = crypto.randomBytes(16).toString('hex');
-  return room.hostToken;
-}
-
 io.on('connection', socket => {
   const room = rooms.get(ROOM_ID);
   const auth = socket.handshake?.auth || {};
@@ -428,8 +428,17 @@ io.on('connection', socket => {
   }
 
   let hostRecovered = false;
-  if (!room.hostOwner && room.hostOwnerClientId && claimedClientId && room.hostOwnerClientId === claimedClientId) {
+  const canRecoverHost = !room.hostOwner
+    && room.hostOwnerClientId
+    && claimedClientId
+    && room.hostOwnerClientId === claimedClientId
+    && room.hostToken
+    && claimedHostToken
+    && claimedHostToken === room.hostToken;
+
+  if (canRecoverHost) {
     room.hostOwner = socket.id;
+    room.hostOwnerClientId = claimedClientId;
     hostRecovered = true;
   }
 
@@ -505,13 +514,14 @@ socket.on('host:toggle', ({ pin } = {}, cb) => {
     room.hostOwner = socket.id;
     room.hostOwnerClientId = socket.data?.clientId || null;
     if (room.phase === 'LOBBY') room.phase = 'ROLLING';
-    const token = ensureHostToken(room);            // <<< genera/recupera token
+    const token = issueHostToken(room);
     saveRoomSnapshot(serialize(room));
     broadcast(room);
     return cb && cb({ ok:true, host:true, hostToken: token });  // <<< invia token
   } else if (room.hostOwner === socket.id) {
     room.hostOwner = null;
     room.hostOwnerClientId = null;
+    room.hostToken = null;
     saveRoomSnapshot(serialize(room));
     broadcast(room);
     return cb && cb({ ok:true, host:false });
@@ -585,6 +595,9 @@ socket.on('host:setFilterName', ({ q }, cb) => {
 // reclaim su reload
 socket.on('host:reclaim', ({ token }, cb)=>{
   if(!token || token !== room.hostToken) return cb && cb({ error:'Token host non valido' });
+  if (room.hostOwnerClientId && socket.data?.clientId && room.hostOwnerClientId !== socket.data.clientId) {
+    return cb && cb({ error: 'Token host non valido' });
+  }
   room.hostOwner = socket.id;
   if (socket.data?.clientId) {
     room.hostOwnerClientId = socket.data.clientId;
@@ -685,6 +698,7 @@ socket.on('team:bid_free', ({ value }, cb) => {
   /* AUTO-ASSEGNAZIONE + RIMOZIONE DALLA LISTA + RESET RIEPILOGO */
   socket.on('winner:autoAssign', (_, cb) => {
     const room = rooms.get(ROOM_ID);
+
     const result = finalizePendingSale(room);
     if (!result.ok) {
       if (room.phase === 'SOLD' && result.code !== 'NOOP') {
@@ -732,7 +746,10 @@ socket.on('host:kick', ({ teamId }, cb) => {
 
 
   socket.on('disconnect', () => {
-    if (room.hostOwner === socket.id) { room.hostOwner = null; broadcast(room); }
+    if (room.hostOwner === socket.id) {
+      room.hostOwner = null;
+      broadcast(room);
+    }
   });
   /* USCITA PARTECIPANTE: rimuove il team dalla stanza (solo fuori asta) */
 socket.on('team:leave', (_ , cb) => {
@@ -752,8 +769,7 @@ socket.on('team:leave', (_ , cb) => {
     if (room.hostOwner === socket.id) {
       room.hostOwner = null;
       room.hostOwnerClientId = null;
-    }
-
+      room.hostToken = null;
     // rimuovi team
     room.teams.delete(tid);
 
@@ -866,7 +882,7 @@ socket.on('host:exitAndClose', (_ , cb) => {
   // 3) reset banditore e stato gara
   room.hostOwner = null;
   room.hostOwnerClientId = null;
-  room.leader = null;
+  room.hostToken = null;
   room.topBid = 0;
   room.deadline = 0;
   room.countdownSec = 0;
