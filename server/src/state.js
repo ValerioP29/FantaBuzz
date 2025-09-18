@@ -18,8 +18,6 @@ export function makeRoom(id){
     hostOwner: null,        // socket.id banditore
     hostOwnerClientId: null,
     hostToken: null,
-    teams: new Map(),       // teamId -> { id,name,credits,acquisitions: [] }
-
     // Stato asta
     phase: 'LOBBY',         // LOBBY | ROLLING | RUNNING | ARMED | COUNTDOWN | SOLD
     topBid: 0,
@@ -42,6 +40,7 @@ export function makeRoom(id){
     currentIndex: 0,
     rolling: false,
     filterName: '', // nuovo
+    autoAssignError: null,
 
   };
 
@@ -123,9 +122,51 @@ export function removeCurrentFromMaster(room){
 }
 
 export function addBackToMaster(room, player){
-  // evita doppioni
-  const exists = room.players.some(p => p.name === player.name && p.role === player.role);
-  if (!exists) room.players.push({ name: player.name, role: player.role, team: player.team || '', fm: player.fm });
+  if (!player || !player.name || !player.role) {
+    rebuildView(room);
+    return;
+  }
+
+  const normName = String(player.name).trim();
+  const normRole = String(player.role).trim();
+  const normTeam = player.team != null ? String(player.team).trim() : '';
+  const hasTeam = normTeam !== '';
+  const hasFm = player.fm != null && player.fm !== '';
+
+  let idx = -1;
+  if (hasTeam && hasFm) {
+    idx = room.players.findIndex(p => {
+      if (!p) return false;
+      if ((p.name || '').trim() !== normName) return false;
+      if ((p.role || '').trim() !== normRole) return false;
+      if ((p.team || '').trim() !== normTeam) return false;
+      if (p.fm == null || p.fm === '') return false;
+      return Number(p.fm) === Number(player.fm);
+    });
+    if (idx < 0) {
+      idx = room.players.findIndex(p =>
+        p && (p.name || '').trim() === normName && (p.role || '').trim() === normRole
+      );
+    }
+  } else {
+    idx = room.players.findIndex(p =>
+      p && (p.name || '').trim() === normName && (p.role || '').trim() === normRole
+    );
+  }
+
+  if (idx >= 0) {
+    const target = room.players[idx];
+    if (hasTeam) target.team = normTeam;
+    if (hasFm) target.fm = player.fm;
+  } else {
+    room.players.push({
+      name: normName,
+      role: normRole,
+      team: normTeam,
+      fm: hasFm ? player.fm : (player.fm ?? null)
+    });
+  }
+
   rebuildView(room);
 }
 
@@ -153,6 +194,7 @@ export function snapshot(room, perspectiveTeamId = null, socketId = null){
 
     phase: room.phase,
     hostLockedBy: room.hostOwner,
+    autoAssignError: room.autoAssignError || null,
 
     topBid: room.topBid,
     leader: room.leader,
@@ -278,10 +320,9 @@ export function hydrate(room, snap){
   room.hostOwner = null;
   room.hostOwnerClientId = null;
   room.hostToken = null;
-  room.deadline = 0;
-  room.countdownSec = 0;
   room.rolling = false;
   room.lastBuzzBy = {};
+  room.autoAssignError = null;
 
   rebuildView(room);
 }

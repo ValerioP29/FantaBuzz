@@ -7,7 +7,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import {
   rooms, makeRoom, snapshot, slugifyName, uniqueTeamId,
-  rebuildView, removeCurrentFromMaster, addBackToMaster, mkHistoryPending,
+  rebuildView, addBackToMaster, mkHistoryPending,
   serialize, hydrate
 } from './state.js';
 import { saveRoomSnapshot, loadRoomSnapshot, writeBackupFile } from './storage.js';
@@ -142,6 +142,141 @@ function validateBid(room, team, proposedPrice) {
   return { ok: true };
 }
 
+function finalizePendingSale(room) {
+  if (!room) return { ok: false, error: 'Room non trovata' };
+  if (room.phase !== 'SOLD') return { ok: false, code: 'NOOP', error: 'Nessuna aggiudicazione' };
+
+  const last = room.history[room.history.length - 1];
+  if (!last) return { ok: false, code: 'NOOP', error: 'Nessuna aggiudicazione' };
+  if (last.finalized) return { ok: false, code: 'NOOP', error: 'Già finalizzato' };
+
+  const tid = last.teamId || room.leader;
+  if (!tid) return { ok: false, error: 'Team non trovato' };
+
+  const team = room.teams.get(tid);
+  if (!team) return { ok: false, error: 'Team non trovato', teamId: tid };
+
+  const price = Number(last.price || 0) || 0;
+  if (team.credits < price) return { ok: false, error: 'Crediti insufficienti', teamId: team.id };
+
+  if (room.config?.enableRosterBudget) {
+    const debt = minBudgetStillNeeded(room, team, price);
+    if (debt > 0) return { ok: false, error: 'Regola rosa violata', teamId: team.id };
+  }
+
+  const playerName = last.playerName && String(last.playerName).trim() ? last.playerName : '(??)';
+  const role = last.role || '';
+  const playerTeam = last.playerTeam || '';
+  const playerFm = last.playerFm ?? null;
+
+  last.playerName = playerName;
+  last.role = role;
+  last.playerTeam = playerTeam;
+  last.playerFm = playerFm;
+  last.teamId = team.id;
+  last.teamName = team.name;
+
+  team.credits -= price;
+  if (!Array.isArray(team.acquisitions)) team.acquisitions = [];
+  team.acquisitions.push({ player: playerName, role, price, at: Date.now() });
+
+  removeFromMasterBySnapshot(room, last);
+
+  room.topBid = 0;
+  room.leader = null;
+  room.phase = 'ROLLING';
+  room.rolling = false;
+  room.autoAssignError = null;
+
+  last.finalized = true;
+  last.finalizedAt = Date.now();
+
+  return { ok: true, teamId: team.id, price };
+}
+
+function removeFromMasterBySnapshot(room, h) {
+  if (!room || !h) return;
+
+  const name = String(h.playerName || '').trim().toLowerCase();
+  const role = String(h.role || '').trim();
+  const team = String(h.playerTeam || '').trim().toLowerCase();
+  const fm = h.playerFm ?? null;
+
+  if (!name || !role) return;
+
+  const idx = room.players.findIndex(p => {
+    if (!p) return false;
+
+    const pn = String(p.name || '').trim().toLowerCase();
+    const pr = String(p.role || '').trim();
+    if (pn !== name || pr !== role) return false;
+
+    if (team) {
+      const pt = String(p.team || '').trim().toLowerCase();
+      if (!pt || pt !== team) return false;
+    }
+
+    if (fm !== null && fm !== undefined && fm !== '') {
+      const pfm = p.fm ?? null;
+      if (pfm === null || pfm === undefined || pfm === '') return false;
+      if (Number(pfm) !== Number(fm)) return false;
+    }
+
+    return true;
+  });
+
+  if (idx >= 0) {
+    room.players.splice(idx, 1);
+    rebuildView(room);
+  }
+}
+
+function recordAutoAssignError(room, result, source = 'auto') {
+  const last = room.history[room.history.length - 1] || null;
+  const fallbackTeamId = result?.teamId || last?.teamId || room.leader || null;
+  const fallbackTeam = fallbackTeamId ? room.teams.get(fallbackTeamId) || null : null;
+
+  room.autoAssignError = {
+    message: result?.error || 'Errore auto-assegnazione',
+    teamId: fallbackTeamId,
+    teamName: fallbackTeam?.name || last?.teamName || null,
+    price: last?.price ?? null,
+    playerName: last?.playerName || null,
+    role: last?.role || null,
+    at: Date.now(),
+    source,
+  };
+}
+
+function scheduleAutoFinalize(room) {
+  if (!room) return;
+  if (room.__autoFinalizeScheduled) return;
+  room.__autoFinalizeScheduled = true;
+  setImmediate(() => {
+    room.__autoFinalizeScheduled = false;
+    let result;
+    try {
+      result = finalizePendingSale(room);
+    } catch (err) {
+      console.error('[autoFinalize] Errore inatteso durante l\'assegnazione automatica:', err);
+      recordAutoAssignError(room, { error: err?.message || 'Errore sconosciuto' }, 'auto');
+      broadcast(room);
+      return;
+    }
+    if (!result.ok) {
+      if (result.code === 'NOOP') return;
+      recordAutoAssignError(room, result, 'auto');
+      console.warn('[autoFinalize] Fallita auto-assegnazione:', room.autoAssignError);
+      broadcast(room);
+      return;
+    }
+    const snap = serialize(room);
+    saveRoomSnapshot(snap);
+    try { writeBackupFile(snap); } catch {}
+    broadcast(room);
+  });
+}
+
 /* ===== Re-hydration all'avvio ===== */
 try {
   const snap = loadRoomSnapshot(ROOM_ID);
@@ -244,9 +379,11 @@ setInterval(() => {
         if (room.leader){
           // crea entry pending, verrà completata in winner:autoAssign
           mkHistoryPending(room);
-          saveRoomSnapshot(serialize(room));
+          const pendingSnap = serialize(room);
+          saveRoomSnapshot(pendingSnap);
           // >>> BACKUP TIMESTAMPED QUI <<<
-          try { writeBackupFile(serialize(room)); } catch {}
+          try { writeBackupFile(pendingSnap); } catch {}
+          scheduleAutoFinalize(room);
         }
         broadcast(room);
       }
@@ -282,7 +419,6 @@ io.on('connection', socket => {
   const room = rooms.get(ROOM_ID);
   const auth = socket.handshake?.auth || {};
   const claimedClientId = typeof auth.clientId === 'string' && auth.clientId ? auth.clientId : null;
-  const claimedHostToken = typeof auth.hostToken === 'string' && auth.hostToken ? auth.hostToken : null;
 
   socket.data = { roomId: ROOM_ID, teamId: null, displayName: null, clientId: claimedClientId };
 
@@ -392,8 +528,14 @@ socket.on('host:toggle', ({ pin } = {}, cb) => {
   }
 });
 
+const FILTER_LOCKED_PHASES = ['RUNNING','ARMED','COUNTDOWN'];
+const FILTER_LOCKED_ERROR = 'Puoi cambiare filtri solo quando l’asta è ferma o dopo l’assegnazione.';
+
 socket.on('host:setFilterName', ({ q }, cb) => {
   if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+  if (FILTER_LOCKED_PHASES.includes(room.phase)) {
+    return cb && cb({ error: FILTER_LOCKED_ERROR });
+  }
   room.filterName = String(q || '');
   rebuildView(room);
   saveRoomSnapshot(serialize(room));
@@ -406,6 +548,9 @@ socket.on('host:setFilterName', ({ q }, cb) => {
   /* FILTRO RUOLO E RANDOM */
   socket.on('host:setRoleFilter', ({ role }, cb) => {
     if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (FILTER_LOCKED_PHASES.includes(room.phase)) {
+      return cb && cb({ error: FILTER_LOCKED_ERROR });
+    }
     const allowed = ['ALL','P','D','C','A'];
     const r = (role || 'ALL').toUpperCase();
     if (!allowed.includes(r)) return cb && cb({ error: 'Ruolo non valido' });
@@ -419,6 +564,9 @@ socket.on('host:setFilterName', ({ q }, cb) => {
 
   socket.on('host:randomStart', (_, cb) => {
     if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (FILTER_LOCKED_PHASES.includes(room.phase)) {
+      return cb && cb({ error: FILTER_LOCKED_ERROR });
+    }
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
     const pick = letters[Math.floor(Math.random() * letters.length)];
     const { usedStart } = rebuildView(room, pick);
@@ -550,41 +698,21 @@ socket.on('team:bid_free', ({ value }, cb) => {
   /* AUTO-ASSEGNAZIONE + RIMOZIONE DALLA LISTA + RESET RIEPILOGO */
   socket.on('winner:autoAssign', (_, cb) => {
     const room = rooms.get(ROOM_ID);
-    const last = room.history[room.history.length - 1];
-    if (room.phase !== 'SOLD' || !last) return cb && cb({ error: 'Nessuna aggiudicazione' });
-    const tid = last.teamId || room.leader; // fallback se serve
-    const team = room.teams.get(tid);
-    if (!team) return cb && cb({ error: 'Team non trovato' });
-    const p = last.price;
-    if (team.credits < p) return cb && cb({ error: 'Crediti insufficienti' });
 
-    // Check min budget per slot anche in soft mode
-    if (room.config?.enableRosterBudget) {
-     const debt = minBudgetStillNeeded(room, team, p);
-    if (debt > 0) return cb && cb({ error: 'Regola rosa violata' });
-}
+    const result = finalizePendingSale(room);
+    if (!result.ok) {
+      if (room.phase === 'SOLD' && result.code !== 'NOOP') {
+        recordAutoAssignError(room, result, 'manual');
+        broadcast(room);
+      }
+      return cb && cb({ error: result.error });
+    }
+    const snap = serialize(room);
+    saveRoomSnapshot(snap);
+    try { writeBackupFile(snap); } catch {}
+    broadcast(room);
+    cb && cb({ ok: true });
 
-
-    team.credits -= p;
-    const playerName = last.playerName && String(last.playerName).trim() ? last.playerName : '(??)';
-    const role = last.role || '';
-    const playerTeam = last.playerTeam || '';
-    const playerFm = last.playerFm ?? null;
-
-    last.playerName = playerName;
-    last.role = role;
-    last.playerTeam = playerTeam;
-    last.playerFm = playerFm;
-
-    team.acquisitions.push({ player: playerName, role, price: p, at: Date.now() });
-
-    removeCurrentFromMaster(room);
-
-    room.topBid = 0;
-    room.leader = null;
-    room.phase = 'ROLLING';
-    room.rolling = false; // fermo finché il banditore non fa Play
-    saveRoomSnapshot(serialize(room));
     broadcast(room);
     cb && cb({ ok: true });
   });
@@ -642,8 +770,6 @@ socket.on('team:leave', (_ , cb) => {
       room.hostOwner = null;
       room.hostOwnerClientId = null;
       room.hostToken = null;
-    }
-
     // rimuovi team
     room.teams.delete(tid);
 
@@ -757,7 +883,6 @@ socket.on('host:exitAndClose', (_ , cb) => {
   room.hostOwner = null;
   room.hostOwnerClientId = null;
   room.hostToken = null;
-  room.leader = null;
   room.topBid = 0;
   room.deadline = 0;
   room.countdownSec = 0;
