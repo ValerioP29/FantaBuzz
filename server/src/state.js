@@ -127,38 +127,54 @@ export function addBackToMaster(room, player){
     return;
   }
 
-  const hasTeam = player.team != null && player.team !== '';
+export function addBackToMaster(room, player){
+  if (!player || !player.name || !player.role) {
+    rebuildView(room);
+    return;
+  }
+
+  const normName = String(player.name).trim();
+  const normRole = String(player.role).trim();
+  const normTeam = player.team != null ? String(player.team).trim() : '';
+  const hasTeam = normTeam !== '';
   const hasFm = player.fm != null && player.fm !== '';
 
   let idx = -1;
   if (hasTeam && hasFm) {
     idx = room.players.findIndex(p => {
       if (!p) return false;
-      if (p.name !== player.name || p.role !== player.role) return false;
-      if ((p.team || '') !== player.team) return false;
+      if ((p.name || '').trim() !== normName) return false;
+      if ((p.role || '').trim() !== normRole) return false;
+      if ((p.team || '').trim() !== normTeam) return false;
       if (p.fm == null || p.fm === '') return false;
       return Number(p.fm) === Number(player.fm);
     });
-
     if (idx < 0) {
-      idx = room.players.findIndex(p => p && p.name === player.name && p.role === player.role);
+      idx = room.players.findIndex(p =>
+        p && (p.name || '').trim() === normName && (p.role || '').trim() === normRole
+      );
     }
   } else {
-    idx = room.players.findIndex(p => p && p.name === player.name && p.role === player.role);
+    idx = room.players.findIndex(p =>
+      p && (p.name || '').trim() === normName && (p.role || '').trim() === normRole
+    );
   }
 
   if (idx >= 0) {
     const target = room.players[idx];
-    if (hasTeam) target.team = player.team;
+    if (hasTeam) target.team = normTeam;
     if (hasFm) target.fm = player.fm;
   } else {
     room.players.push({
-      name: player.name,
-      role: player.role,
-      team: hasTeam ? player.team : (player.team || ''),
+      name: normName,
+      role: normRole,
+      team: normTeam,
       fm: hasFm ? player.fm : (player.fm ?? null)
     });
   }
+
+  rebuildView(room);
+}
 
   rebuildView(room);
 }
