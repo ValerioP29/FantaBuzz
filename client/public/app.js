@@ -305,14 +305,19 @@ $('btnHostToggle').onclick = () => {
   const payload = {};
   if (!document.body.dataset.hostPinAsked) {
     const pin = prompt('PIN banditore (se configurato):') || '';
-    payload.pin = pin; document.body.dataset.hostPinAsked = '1';
+    payload.pin = pin;
   }
   socket.emit('host:toggle', payload, (res)=>{
-    if(res?.error) return notify(res.error, 'error');
+    if(res?.error) {
+      delete document.body.dataset.hostPinAsked;
+      return notify(res.error, 'error');
+    }
     if (res.host && res.hostToken) {
+      document.body.dataset.hostPinAsked = '1';
       try { localStorage.setItem('hostToken', res.hostToken); } catch(_){}
       notify('Hai preso il ruolo di banditore', 'info');
     } else if (!res.host) {
+      delete document.body.dataset.hostPinAsked;
       try { localStorage.removeItem('hostToken'); } catch(_){}
       notify('Hai lasciato il ruolo', 'info');
     }
