@@ -528,10 +528,17 @@ socket.on('team:bid_free', ({ value }, cb) => {
 
 
     team.credits -= p;
-    const player = room.viewPlayers[room.currentIndex];
-    last.playerName = player?.name || '(??)';
-    last.role = player?.role || '';
-    team.acquisitions.push({ player: last.playerName, role: last.role, price: p, at: Date.now() });
+    const playerName = last.playerName && String(last.playerName).trim() ? last.playerName : '(??)';
+    const role = last.role || '';
+    const playerTeam = last.playerTeam || '';
+    const playerFm = last.playerFm ?? null;
+
+    last.playerName = playerName;
+    last.role = role;
+    last.playerTeam = playerTeam;
+    last.playerFm = playerFm;
+
+    team.acquisitions.push({ player: playerName, role, price: p, at: Date.now() });
 
     removeCurrentFromMaster(room);
 
