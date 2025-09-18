@@ -419,9 +419,7 @@ io.on('connection', socket => {
   const room = rooms.get(ROOM_ID);
   const auth = socket.handshake?.auth || {};
   const claimedClientId = typeof auth.clientId === 'string' && auth.clientId ? auth.clientId : null;
-
-  socket.data = { roomId: ROOM_ID, teamId: null, displayName: null, clientId: claimedClientId };
-
+  const claimedHostToken = typeof auth.hostToken === 'string' && auth.hostToken ? auth.hostToken : null;
   const liveSockets = io.of('/').sockets;
   if (room.hostOwner && !liveSockets.has(room.hostOwner)) {
     room.hostOwner = null;
@@ -698,6 +696,7 @@ socket.on('team:bid_free', ({ value }, cb) => {
   /* AUTO-ASSEGNAZIONE + RIMOZIONE DALLA LISTA + RESET RIEPILOGO */
   socket.on('winner:autoAssign', (_, cb) => {
     const room = rooms.get(ROOM_ID);
+
 
     const result = finalizePendingSale(room);
     if (!result.ok) {

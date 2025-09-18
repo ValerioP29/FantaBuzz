@@ -202,8 +202,8 @@ function applyRollMsUI(s){
   const box  = $('rollControls');
   if (!sel || !box) return;
 
-  // mostra i controlli rullo solo all'host
-  box.style.display = s.youAreHost ? '' : 'none';
+  const canShow = s.youAreHost && __hostView === 'controls';
+  box.style.display = canShow ? '' : 'none';
 
   // sync valore dal server
   if (s.rollMs && String(sel.value) !== String(s.rollMs)) {
@@ -212,27 +212,36 @@ function applyRollMsUI(s){
 }
 
 function applyHostPanels(s){
-  // partecipanti e storico: SEMPRE visibili per tutti
+  if (!s.youAreHost && __hostView !== 'summary') {
+    __hostView = 'summary';
+  }
+
+  const isControlsView = s.youAreHost && __hostView === 'controls';
+
+  if (cardCtrl) cardCtrl.style.display = isControlsView ? '' : 'none';
+  if (cardImport) cardImport.style.display = isControlsView ? '' : 'none';
   if (cardParticipants) cardParticipants.style.display = '';
   if (cardHistory) cardHistory.style.display = '';
 
-  // controlli + import: solo host e solo nella vista "controls"
-  const showControls = s.youAreHost && __hostView === 'controls';
-  if (cardCtrl) cardCtrl.style.display = showControls ? '' : 'none';
-  if (cardImport) cardImport.style.display = showControls ? '' : 'none';
-
-  // switch host: visibile solo se host
   const sw = $('hostViewSwitch');
   if (sw) sw.style.display = s.youAreHost ? '' : 'none';
+
+  const wrap = $('mainWrap');
+  if (wrap) wrap.dataset.hostView = isControlsView ? 'controls' : 'summary';
+
+  const btnSummary = $('btnHostViewSummary');
+  const btnControls = $('btnHostViewControls');
+  if (btnSummary) btnSummary.classList.toggle('active', __hostView === 'summary' || !s.youAreHost);
+  if (btnControls) {
+    btnControls.classList.toggle('active', isControlsView);
+    btnControls.disabled = !s.youAreHost;
+  }
 }
-
-
 
 /* ===== APPLY STATE ===== */
 function applyState(s){
   window.__last_state = s;
 
-  $('phaseBadge').textContent = s.phase || '—';
   youAreHost = !!s.youAreHost;
   $('hostStatus').textContent = youAreHost ? 'Banditore' : 'Partecipante';
 
@@ -260,8 +269,8 @@ function applyState(s){
     btnRandom.title = duringAuction ? filtersLockedMsg : '';
   }
 
-    // Slot
-    drawSlotWindow(s.currentPlayer, s.prevPlayer, s.nextPlayer);
+  // Slot
+  drawSlotWindow(s.currentPlayer, s.prevPlayer, s.nextPlayer);
 
   // Riepilogo
   $('sumBid').textContent = s.topBid;
@@ -274,9 +283,9 @@ function applyState(s){
   renderParticipantsManage(s);
   renderHistory(s);
   renderAcquisitions(s.acquisitions || []);
+  applyHostPanels(s);
   applyRollMsUI(s);
   syncSearchVisibility(s);
-  applyHostPanels(s);
 
 
 
@@ -612,7 +621,9 @@ $('searchPlayer')?.addEventListener('input', (e)=>{
 // Solo host vede l’input
 function syncSearchVisibility(s){
   const el = $('searchPlayer');
-  if (el) el.style.display = s.youAreHost ? '' : 'none';
+  if (!el) return;
+  const canShow = s.youAreHost && __hostView === 'controls';
+  el.style.display = canShow ? '' : 'none';
 }
 
 
@@ -693,12 +704,20 @@ function applyHostViewSwitch(s){
 
 $('btnHostViewSummary')?.addEventListener('click', ()=>{
   __hostView = 'summary';
-  if (window.__last_state) applyHostPanels(window.__last_state);
+  if (window.__last_state) {
+    applyHostPanels(window.__last_state);
+    applyRollMsUI(window.__last_state);
+    syncSearchVisibility(window.__last_state);
+  }
 });
 
 $('btnHostViewControls')?.addEventListener('click', ()=>{
   __hostView = 'controls';
-  if (window.__last_state) applyHostPanels(window.__last_state);
+  if (window.__last_state) {
+    applyHostPanels(window.__last_state);
+    applyRollMsUI(window.__last_state);
+    syncSearchVisibility(window.__last_state);
+  }
 });
 
 
