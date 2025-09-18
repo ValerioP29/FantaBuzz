@@ -360,8 +360,14 @@ socket.on('host:toggle', ({ pin } = {}, cb) => {
   }
 });
 
+const FILTER_LOCKED_PHASES = ['RUNNING','ARMED','COUNTDOWN'];
+const FILTER_LOCKED_ERROR = 'Puoi cambiare filtri solo quando l’asta è ferma o dopo l’assegnazione.';
+
 socket.on('host:setFilterName', ({ q }, cb) => {
   if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+  if (FILTER_LOCKED_PHASES.includes(room.phase)) {
+    return cb && cb({ error: FILTER_LOCKED_ERROR });
+  }
   room.filterName = String(q || '');
   rebuildView(room);
   saveRoomSnapshot(serialize(room));
@@ -374,6 +380,9 @@ socket.on('host:setFilterName', ({ q }, cb) => {
   /* FILTRO RUOLO E RANDOM */
   socket.on('host:setRoleFilter', ({ role }, cb) => {
     if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (FILTER_LOCKED_PHASES.includes(room.phase)) {
+      return cb && cb({ error: FILTER_LOCKED_ERROR });
+    }
     const allowed = ['ALL','P','D','C','A'];
     const r = (role || 'ALL').toUpperCase();
     if (!allowed.includes(r)) return cb && cb({ error: 'Ruolo non valido' });
@@ -387,6 +396,9 @@ socket.on('host:setFilterName', ({ q }, cb) => {
 
   socket.on('host:randomStart', (_, cb) => {
     if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (FILTER_LOCKED_PHASES.includes(room.phase)) {
+      return cb && cb({ error: FILTER_LOCKED_ERROR });
+    }
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
     const pick = letters[Math.floor(Math.random() * letters.length)];
     const { usedStart } = rebuildView(room, pick);
