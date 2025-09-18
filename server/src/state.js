@@ -16,6 +16,7 @@ export function makeRoom(id){
     sessionEpoch: 1,
 
     hostOwner: null,        // socket.id banditore
+    hostOwnerClientId: null,
     teams: new Map(),       // teamId -> { id,name,credits,acquisitions: [] }
 
     // Stato asta
@@ -318,6 +319,7 @@ export function hydrate(room, snap){
 
   // Volatili
   room.hostOwner = null;
+  room.hostOwnerClientId = null;
   room.deadline = 0;
   room.countdownSec = 0;
   room.rolling = false;
