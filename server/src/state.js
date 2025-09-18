@@ -40,6 +40,7 @@ export function makeRoom(id){
     currentIndex: 0,
     rolling: false,
     filterName: '', // nuovo
+    autoAssignError: null,
 
   };
 
@@ -151,6 +152,7 @@ export function snapshot(room, perspectiveTeamId = null, socketId = null){
 
     phase: room.phase,
     hostLockedBy: room.hostOwner,
+    autoAssignError: room.autoAssignError || null,
 
     topBid: room.topBid,
     leader: room.leader,
@@ -278,6 +280,7 @@ export function hydrate(room, snap){
   room.countdownSec = 0;
   room.rolling = false;
   room.lastBuzzBy = {};
+  room.autoAssignError = null;
 
   rebuildView(room);
 }
