@@ -1,5 +1,28 @@
 /* global Toastify, XLSX */
-const socket = io();
+let storedHostToken = null;
+try {
+  storedHostToken = localStorage.getItem('hostToken');
+} catch (_) {}
+
+let clientId = null;
+try {
+  clientId = localStorage.getItem('clientId');
+  if (!clientId) {
+    const gen = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    clientId = gen;
+    localStorage.setItem('clientId', clientId);
+  }
+} catch (_) {}
+
+const socketAuth = {};
+if (clientId) socketAuth.clientId = clientId;
+if (storedHostToken) socketAuth.hostToken = storedHostToken;
+
+const socket = io({ auth: socketAuth });
+socket.auth = socket.auth || {};
+Object.assign(socket.auth, socketAuth);
 let registered = false;
 let youAreHost = false;
 
@@ -25,9 +48,8 @@ let youAreHost = false;
   });
 })();
 
-const hostToken = localStorage.getItem('hostToken');
-if (hostToken) {
-  socket.emit('host:reclaim', { token: hostToken }, (res)=>{
+if (storedHostToken) {
+  socket.emit('host:reclaim', { token: storedHostToken }, (res)=>{
     if(res?.ok) notify('Ruolo banditore ripristinato','info');
   });
 }
@@ -305,15 +327,25 @@ $('btnHostToggle').onclick = () => {
   const payload = {};
   if (!document.body.dataset.hostPinAsked) {
     const pin = prompt('PIN banditore (se configurato):') || '';
-    payload.pin = pin; document.body.dataset.hostPinAsked = '1';
+    payload.pin = pin;
   }
   socket.emit('host:toggle', payload, (res)=>{
-    if(res?.error) return notify(res.error, 'error');
+    if(res?.error) {
+      delete document.body.dataset.hostPinAsked;
+      return notify(res.error, 'error');
+    }
     if (res.host && res.hostToken) {
+      document.body.dataset.hostPinAsked = '1';
       try { localStorage.setItem('hostToken', res.hostToken); } catch(_){}
+      socket.auth = socket.auth || {};
+      socket.auth.hostToken = res.hostToken;
       notify('Hai preso il ruolo di banditore', 'info');
     } else if (!res.host) {
+      delete document.body.dataset.hostPinAsked;
       try { localStorage.removeItem('hostToken'); } catch(_){}
+      if (socket?.auth && 'hostToken' in socket.auth) {
+        delete socket.auth.hostToken;
+      }
       notify('Hai lasciato il ruolo', 'info');
     }
   });
@@ -600,6 +632,9 @@ $('btnHostExitAndClose').addEventListener('click', () => {
     try {
       localStorage.removeItem('hostToken'); // <<< AGGIUNGI QUESTO
     } catch(_) {}
+    if (socket?.auth && 'hostToken' in socket.auth) {
+      delete socket.auth.hostToken;
+    }
     notify('Asta chiusa. Sessione azzerata.', 'info');
     location.reload(); // <<< meglio forzare reset
   });
@@ -619,6 +654,9 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.removeItem('teamSession');
     localStorage.removeItem('hostToken');
   } catch(_){}
+  if (socket?.auth && 'hostToken' in socket.auth) {
+    delete socket.auth.hostToken;
+  }
   location.href = '/';
 });
 

@@ -280,9 +280,25 @@ function ensureHostToken(room){
 
 io.on('connection', socket => {
   const room = rooms.get(ROOM_ID);
-  socket.data = { roomId: ROOM_ID, teamId: null, displayName: null };
+  const auth = socket.handshake?.auth || {};
+  const claimedClientId = typeof auth.clientId === 'string' && auth.clientId ? auth.clientId : null;
+
+  socket.data = { roomId: ROOM_ID, teamId: null, displayName: null, clientId: claimedClientId };
+
+  const liveSockets = io.of('/').sockets;
+  if (room.hostOwner && !liveSockets.has(room.hostOwner)) {
+    room.hostOwner = null;
+  }
+
+  let hostRecovered = false;
+  if (!room.hostOwner && room.hostOwnerClientId && claimedClientId && room.hostOwnerClientId === claimedClientId) {
+    room.hostOwner = socket.id;
+    hostRecovered = true;
+  }
+
   socket.join(ROOM_ID);
   socket.emit('state', snapshot(room, null, socket.id));
+  if (hostRecovered) broadcast(room);
 
   /* REGISTRAZIONE */
 socket.on('team:register', ({ name, credits }, cb) => {
@@ -341,12 +357,16 @@ socket.on('team:resume', ({ teamId, key }, cb) => {
 
 
 socket.on('host:toggle', ({ pin } = {}, cb) => {
+  if (room.hostOwner && !io.of('/').sockets.has(room.hostOwner)) {
+    room.hostOwner = null;
+  }
   if (room.hostOwner && room.hostOwner !== socket.id) {
     return cb && cb({ error: 'Banditore già assegnato' });
   }
   if (!room.hostOwner) {
     if (HOST_PIN && pin !== HOST_PIN) return cb && cb({ error: 'PIN mancante o errato' });
     room.hostOwner = socket.id;
+    room.hostOwnerClientId = socket.data?.clientId || null;
     if (room.phase === 'LOBBY') room.phase = 'ROLLING';
     const token = ensureHostToken(room);            // <<< genera/recupera token
     saveRoomSnapshot(serialize(room));
@@ -354,6 +374,7 @@ socket.on('host:toggle', ({ pin } = {}, cb) => {
     return cb && cb({ ok:true, host:true, hostToken: token });  // <<< invia token
   } else if (room.hostOwner === socket.id) {
     room.hostOwner = null;
+    room.hostOwnerClientId = null;
     saveRoomSnapshot(serialize(room));
     broadcast(room);
     return cb && cb({ ok:true, host:false });
@@ -416,6 +437,9 @@ socket.on('host:setFilterName', ({ q }, cb) => {
 socket.on('host:reclaim', ({ token }, cb)=>{
   if(!token || token !== room.hostToken) return cb && cb({ error:'Token host non valido' });
   room.hostOwner = socket.id;
+  if (socket.data?.clientId) {
+    room.hostOwnerClientId = socket.data.clientId;
+  }
   saveRoomSnapshot(serialize(room));
   cb && cb({ ok:true });
   broadcast(room);
@@ -528,10 +552,17 @@ socket.on('team:bid_free', ({ value }, cb) => {
 
 
     team.credits -= p;
-    const player = room.viewPlayers[room.currentIndex];
-    last.playerName = player?.name || '(??)';
-    last.role = player?.role || '';
-    team.acquisitions.push({ player: last.playerName, role: last.role, price: p, at: Date.now() });
+    const playerName = last.playerName && String(last.playerName).trim() ? last.playerName : '(??)';
+    const role = last.role || '';
+    const playerTeam = last.playerTeam || '';
+    const playerFm = last.playerFm ?? null;
+
+    last.playerName = playerName;
+    last.role = role;
+    last.playerTeam = playerTeam;
+    last.playerFm = playerFm;
+
+    team.acquisitions.push({ player: playerName, role, price: p, at: Date.now() });
 
     removeCurrentFromMaster(room);
 
@@ -590,7 +621,10 @@ socket.on('team:leave', (_ , cb) => {
     if (room.leader === tid) { room.leader = null; room.topBid = 0; }
 
     // se era host, libera
-    if (room.hostOwner === socket.id) room.hostOwner = null;
+    if (room.hostOwner === socket.id) {
+      room.hostOwner = null;
+      room.hostOwnerClientId = null;
+    }
 
     // rimuovi team
     room.teams.delete(tid);
@@ -672,7 +706,7 @@ socket.on('host:undoPurchase', ({ historyId }, cb) => {
   }
 
   // 3) rimetti il giocatore nel master
-  addBackToMaster(room, { name: h.playerName, role: h.role });
+  addBackToMaster(room, { name: h.playerName, role: h.role, team: h.playerTeam, fm: h.playerFm });
 
   // 4) rimuovi la voce di storico
   room.history.splice(idx, 1);
@@ -703,6 +737,7 @@ socket.on('host:exitAndClose', (_ , cb) => {
 
   // 3) reset banditore e stato gara
   room.hostOwner = null;
+  room.hostOwnerClientId = null;
   room.leader = null;
   room.topBid = 0;
   room.deadline = 0;

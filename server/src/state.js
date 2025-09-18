@@ -16,6 +16,7 @@ export function makeRoom(id){
     sessionEpoch: 1,
 
     hostOwner: null,        // socket.id banditore
+    hostOwnerClientId: null,
     teams: new Map(),       // teamId -> { id,name,credits,acquisitions: [] }
 
     // Stato asta
@@ -93,11 +94,31 @@ export function rebuildView(room, startLetter /* opzionale: 'A'..'Z' */){
 
 
 export function removeCurrentFromMaster(room){
-  const cp = room.viewPlayers[room.currentIndex];
-  if (!cp) return;
-  const idx = room.players.findIndex(p => p.name === cp.name && p.role === cp.role);
-  if (idx >= 0) room.players.splice(idx, 1);
-  rebuildView(room);
+  const last = room.history[room.history.length - 1];
+  if (!last) return;
+
+  const targetName = last.playerName || '';
+  const targetRole = last.role || '';
+  if (!targetName || !targetRole) return;
+
+  const idx = room.players.findIndex(p => {
+    if (!p) return false;
+    if (p.name !== targetName || p.role !== targetRole) return false;
+
+    if (last.playerTeam && (p.team || '') !== last.playerTeam) return false;
+
+    if (last.playerFm != null && last.playerFm !== '') {
+      if (p.fm != null && p.fm !== '') return String(p.fm) === String(last.playerFm);
+      return true;
+    }
+
+    return true;
+  });
+
+  if (idx >= 0) {
+    room.players.splice(idx, 1);
+    rebuildView(room);
+  }
 }
 
 export function addBackToMaster(room, player){
@@ -172,7 +193,9 @@ export function mkHistoryPending(room){
     teamName: team.name,
     price: room.topBid || 0,
     playerName: cur?.name || '',           // subito nome/ruolo correnti
-    role: cur?.role || ''
+    role: cur?.role || '',
+    playerTeam: cur?.team || '',
+    playerFm: cur?.fm ?? null
   };
 
   room.history.push(entry);
@@ -252,6 +275,7 @@ export function hydrate(room, snap){
 
   // Volatili
   room.hostOwner = null;
+  room.hostOwnerClientId = null;
   room.deadline = 0;
   room.countdownSec = 0;
   room.rolling = false;
