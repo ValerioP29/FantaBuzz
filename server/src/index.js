@@ -679,7 +679,7 @@ socket.on('host:undoPurchase', ({ historyId }, cb) => {
   }
 
   // 3) rimetti il giocatore nel master
-  addBackToMaster(room, { name: h.playerName, role: h.role });
+  addBackToMaster(room, { name: h.playerName, role: h.role, team: h.playerTeam, fm: h.playerFm });
 
   // 4) rimuovi la voce di storico
   room.history.splice(idx, 1);
