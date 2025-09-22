@@ -750,7 +750,7 @@ socket.on('host:kick', ({ teamId }, cb) => {
       broadcast(room);
     }
   });
-  /* USCITA PARTECIPANTE: rimuove il team dalla stanza (solo fuori asta) */
+ /* USCITA PARTECIPANTE: rimuove il team dalla stanza (solo fuori asta) */
 socket.on('team:leave', (_ , cb) => {
   try {
     const tid = socket.data.teamId;
@@ -762,13 +762,18 @@ socket.on('team:leave', (_ , cb) => {
     }
 
     // se era leader resetta eventuale topBid
-    if (room.leader === tid) { room.leader = null; room.topBid = 0; }
+    if (room.leader === tid) { 
+      room.leader = null; 
+      room.topBid = 0; 
+    }
 
     // se era host, libera
     if (room.hostOwner === socket.id) {
       room.hostOwner = null;
       room.hostOwnerClientId = null;
       room.hostToken = null;
+    }
+
     // rimuovi team
     room.teams.delete(tid);
 
