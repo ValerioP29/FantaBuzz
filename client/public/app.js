@@ -82,10 +82,10 @@ function renderParticipantsManage(s){
   const ul = $('manageList'); ul.innerHTML = '';
   for (const p of s.participants){
     const li = document.createElement('li');
-    li.innerHTML = `<span>${p.name}</span>
+    li.innerHTML = `<span class="fs-5">${p.name}</span>
       <div>
-        ${youAreHost ? `<button class="btn btn-outline btn-kick" data-id="${p.id}">Rimuovi</button>` : ''}
-        <strong>${p.credits}</strong>
+        ${youAreHost ? `<button class="btn btn-outline btn-kick" data-id="${p.id}"><i class="bi bi-x-octagon fw-bold"></i></button>` : ''}
+        <strong class="fs-5">${p.credits}</strong>
       </div>`;
     ul.appendChild(li);
   }
