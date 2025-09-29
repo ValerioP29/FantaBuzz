@@ -254,6 +254,20 @@ body {
   border: none;
 }
 
+.btn-danger {
+  background: linear-gradient(180deg, var(--danger), #c03939);
+  color: #ffffff;
+  font-weight: 800;
+  border: none;
+  box-shadow: 0 6px 18px rgba(217, 72, 72, .28);
+}
+
+.btn-danger:hover {
+  filter: none;
+  background: linear-gradient(180deg, #c84a4a, #a83232);
+  box-shadow: 0 10px 28px rgba(217, 72, 72, .36);
+}
+
 .btn-outline {
   background: #59d2ff;
   border: 1px solid #cfe6f3;
