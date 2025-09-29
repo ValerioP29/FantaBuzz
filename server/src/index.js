@@ -493,6 +493,16 @@ io.on('connection', socket => {
   const auth = socket.handshake?.auth || {};
   const claimedClientId = typeof auth.clientId === 'string' && auth.clientId ? auth.clientId : null;
   const claimedHostToken = typeof auth.hostToken === 'string' && auth.hostToken ? auth.hostToken : null;
+  socket.data = socket.data || {};
+  socket.data.clientId = claimedClientId || socket.data.clientId || null;
+
+  if (!socket.data.clientId) {
+    const generatedId = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : crypto.randomBytes(16).toString('hex');
+    socket.data.clientId = generatedId;
+    socket.emit('session:clientId', { clientId: generatedId });
+  }
   const liveSockets = io.of('/').sockets;
   if (room.hostOwner && !liveSockets.has(room.hostOwner)) {
     room.hostOwner = null;
@@ -501,15 +511,15 @@ io.on('connection', socket => {
   let hostRecovered = false;
   const canRecoverHost = !room.hostOwner
     && room.hostOwnerClientId
-    && claimedClientId
-    && room.hostOwnerClientId === claimedClientId
+    && socket.data.clientId
+    && room.hostOwnerClientId === socket.data.clientId
     && room.hostToken
     && claimedHostToken
     && claimedHostToken === room.hostToken;
 
   if (canRecoverHost) {
     room.hostOwner = socket.id;
-    room.hostOwnerClientId = claimedClientId;
+    room.hostOwnerClientId = socket.data.clientId || null;
     hostRecovered = true;
   }
 
