@@ -6,17 +6,32 @@ function roomFile(roomId){
 return path.join(DATA_DIR, `${roomId}.json`);
 }
 export function saveRoomSnapshot(room){
-try{
-const file = roomFile(room.id || 'DEFAULT');
-const tmp = `${file}.tmp`;
-const json = JSON.stringify(room, null, 2);
-fs.writeFileSync(tmp, json);
-fs.renameSync(tmp, file);
-return true;
-} catch(e){
-console.error('saveRoomSnapshot error:', e);
-return false;
-}
+  try{
+    const file = roomFile(room.id || 'DEFAULT');
+    const tmp = `${file}.tmp`;
+    const json = JSON.stringify(room, null, 2);
+
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeFileSync(fd, json);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    fs.renameSync(tmp, file);
+
+    const dirFd = fs.openSync(path.dirname(file), 'r');
+    try {
+      fs.fsyncSync(dirFd);
+    } finally {
+      fs.closeSync(dirFd);
+    }
+    return true;
+  } catch(e){
+    console.error('saveRoomSnapshot error:', e);
+    return false;
+  }
 }
 export function loadRoomSnapshot(roomId){
 try{
@@ -36,6 +51,13 @@ export function writeBackupFile(snap){
   const stamp = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
   const dir = DATA_DIR;
   const file = path.join(dir, `DEFAULT.${stamp}.json`);
-  fs.writeFileSync(file, JSON.stringify(snap, null, 2));
+  const json = JSON.stringify(snap, null, 2);
+  const fd = fs.openSync(file, 'w');
+  try {
+    fs.writeFileSync(fd, json);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 

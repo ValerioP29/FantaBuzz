@@ -119,8 +119,31 @@ function broadcast(room){
   }
 }
 
-function setArmed(room){ room.phase = 'ARMED'; room.deadline = now() + room.armMs; room.countdownSec = 0; }
-function setCountdown(room){ room.phase = 'COUNTDOWN'; room.countdownSec = 3; room.deadline = now() + 1000; }
+function transitionPhase(room, nextPhase) {
+  if (!room) return;
+  if (room.phase === nextPhase) return;
+  room.phase = nextPhase;
+  room.version = (room.version || 0) + 1;
+}
+
+function persistRoom(room, preSerialized = null) {
+  if (!room) return null;
+  const snap = preSerialized || serialize(room);
+  saveRoomSnapshot(snap);
+  room.__lastSnapshotVersion = snap.version ?? room.version ?? 0;
+  return snap;
+}
+
+function setArmed(room){
+  transitionPhase(room, 'ARMED');
+  room.deadline = now() + room.armMs;
+  room.countdownSec = 0;
+}
+function setCountdown(room){
+  transitionPhase(room, 'COUNTDOWN');
+  room.countdownSec = 3;
+  room.deadline = now() + 1000;
+}
 
 function countByRole(acquisitions = []) {
   const c = { P:0, D:0, C:0, A:0 };
@@ -232,7 +255,7 @@ function finalizePendingSale(room) {
 
   room.topBid = 0;
   room.leader = null;
-  room.phase = 'ROLLING';
+  transitionPhase(room, 'ROLLING');
   room.rolling = false;
   room.autoAssignError = null;
 
@@ -318,9 +341,11 @@ function scheduleAutoFinalize(room) {
       broadcast(room);
       return;
     }
-    const snap = serialize(room);
-    saveRoomSnapshot(snap);
-    try { writeBackupFile(snap); } catch {}
+    if ((room.__lastSnapshotVersion || 0) === (room.version || 0)) {
+      broadcast(room);
+      return;
+    }
+    persistRoom(room);
     broadcast(room);
   });
 }
@@ -351,7 +376,7 @@ app.post('/api/listone/import', importRateLimit, requireHostAuth, (req, res) => 
     room.players = players;
     room.currentIndex = 0;
     rebuildView(room);
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     return res.json({ ok:true, imported, rejected, header });
   } catch(e){
@@ -422,13 +447,13 @@ setInterval(() => {
       if (room.countdownSec > 1){
         room.countdownSec -= 1; room.deadline = now() + 1000; broadcast(room);
       } else {
-        room.phase = 'SOLD';
+        transitionPhase(room, 'SOLD');
         room.deadline = 0; room.countdownSec = 0;
         if (room.leader){
           // crea entry pending, verrà completata in winner:autoAssign
           mkHistoryPending(room);
           const pendingSnap = serialize(room);
-          saveRoomSnapshot(pendingSnap);
+          persistRoom(room, pendingSnap);
           // >>> BACKUP TIMESTAMPED QUI <<<
           try { writeBackupFile(pendingSnap); } catch {}
           scheduleAutoFinalize(room);
@@ -528,7 +553,7 @@ socket.on('team:register', ({ name, credits }, cb) => {
     room.teams.set(tid, team);
     socket.data.teamId = tid;
     socket.data.displayName = team.name;
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     cb && cb({ ok: true, teamId: tid, key: team.key });
   } catch (e) {
@@ -566,7 +591,7 @@ socket.on('team:resume', ({ teamId, key }, cb) => {
     team.key = makeKey();
     team.sessionEpoch = currentEpoch;
 
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     cb && cb({ ok:true, teamId: team.id, name: team.name, credits: team.credits, key: team.key });
   } catch(e){
@@ -585,17 +610,17 @@ socket.on('host:toggle', ({ pin } = {}, cb) => {
   if (!room.hostOwner) {
     if (HOST_PIN && pin !== HOST_PIN) return cb && cb({ error: 'PIN mancante o errato' });
     room.hostOwner = socket.id;
-    room.hostOwnerClientId = socket.data.clientId || null;
-    if (room.phase === 'LOBBY') room.phase = 'ROLLING';
+    room.hostOwnerClientId = socket.data?.clientId || null;
+    if (room.phase === 'LOBBY') transitionPhase(room, 'ROLLING');
     const token = issueHostToken(room);
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     return cb && cb({ ok:true, host:true, hostToken: token });  // <<< invia token
   } else if (room.hostOwner === socket.id) {
     room.hostOwner = null;
     room.hostOwnerClientId = null;
     room.hostToken = null;
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     return cb && cb({ ok:true, host:false });
   }
@@ -611,7 +636,7 @@ socket.on('host:setFilterName', ({ q }, cb) => {
   }
   room.filterName = String(q || '');
   rebuildView(room);
-  saveRoomSnapshot(serialize(room));
+  persistRoom(room);
   broadcast(room);
   cb && cb({ ok: true });
 });
@@ -630,7 +655,7 @@ socket.on('host:setFilterName', ({ q }, cb) => {
     room.filterRole = r;
     rebuildView(room);
     if (room.viewPlayers.length === 0) { room.rolling = false; }
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     cb && cb({ ok: true });
   });
@@ -643,7 +668,7 @@ socket.on('host:setFilterName', ({ q }, cb) => {
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
     const pick = letters[Math.floor(Math.random() * letters.length)];
     const { usedStart } = rebuildView(room, pick);
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     cb && cb({ ok: true, letter: usedStart || pick });
   });
@@ -657,9 +682,9 @@ socket.on('host:setFilterName', ({ q }, cb) => {
   room.rolling = !room.rolling;
   if (room.rolling) {
     room.__rollTickAt = now();
-    room.phase = 'ROLLING';
+    transitionPhase(room, 'ROLLING');
   }
-  saveRoomSnapshot(serialize(room)); // <<< aggiunto
+  persistRoom(room);
   broadcast(room);
   cb && cb({ ok: true, rolling: room.rolling });
 });
@@ -672,8 +697,10 @@ socket.on('host:reclaim', ({ token }, cb)=>{
     return cb && cb({ error: 'Token host non valido' });
   }
   room.hostOwner = socket.id;
-  room.hostOwnerClientId = socket.data.clientId || null;
-  saveRoomSnapshot(serialize(room));
+  if (socket.data?.clientId) {
+    room.hostOwnerClientId = socket.data.clientId;
+  }
+  persistRoom(room);
   cb && cb({ ok:true });
   broadcast(room);
 });
@@ -682,7 +709,7 @@ socket.on('host:reclaim', ({ token }, cb)=>{
   /* OFFERTE: prima offerta in ROLLING avvia RUNNING e stoppa rullo. No auto-rialzo. */
   function ensureAuctionStartedByBid(){
     if (room.phase === 'ROLLING') {
-      room.phase = 'RUNNING';
+      transitionPhase(room, 'RUNNING');
       room.rolling = false;
       room.deadline = 0;
       room.countdownSec = 0;
@@ -730,6 +757,8 @@ socket.on('team:bid_inc', ({ amount }, cb) => {
   room.topBid = proposed;
   room.leader = tid;
   setArmed(room);
+  const snap = serialize(room);
+  persistRoom(room, snap);
   broadcast(room);
   cb && cb({ ok: true, topBid: room.topBid, warn: v.warn });
 });
@@ -760,6 +789,8 @@ socket.on('team:bid_free', ({ value }, cb) => {
   room.topBid = val;
   room.leader = tid;
   setArmed(room);
+  const snap = serialize(room);
+  persistRoom(room, snap);
   broadcast(room);
   cb && cb({ ok: true, topBid: room.topBid, warn: v.warn });
 });
@@ -780,11 +811,7 @@ socket.on('team:bid_free', ({ value }, cb) => {
       return cb && cb({ error: result.error });
     }
     const snap = serialize(room);
-    saveRoomSnapshot(snap);
-    try { writeBackupFile(snap); } catch {}
-    broadcast(room);
-    cb && cb({ ok: true });
-
+    persistRoom(room, snap);
     broadcast(room);
     cb && cb({ ok: true });
   });
@@ -811,7 +838,7 @@ socket.on('host:kick', ({ teamId }, cb) => {
   // elimina il team
   room.teams.delete(teamId);
 
-  saveRoomSnapshot(serialize(room));
+  persistRoom(room);
   broadcast(room);
   cb && cb({ ok: true });
 });
@@ -854,7 +881,7 @@ socket.on('team:leave', (_ , cb) => {
     socket.data.teamId = null;
     socket.data.displayName = null;
 
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     cb && cb({ ok: true });
   } catch (e) {
@@ -887,7 +914,7 @@ socket.on('team:updateProfile', ({ name, credits }, cb) => {
       team.credits = c;
     }
 
-    saveRoomSnapshot(serialize(room));
+    persistRoom(room);
     broadcast(room);
     cb && cb({ ok: true, team: { id: team.id, name: team.name, credits: team.credits } });
   } catch (e) {
@@ -899,8 +926,8 @@ socket.on('host:stopRoll', (_ , cb) => {
   const room = rooms.get(ROOM_ID);
   if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
   room.rolling = false;
-  if (room.phase === 'ROLLING') room.phase = 'ROLLING'; // resta in ROLLING ma fermo
-  saveRoomSnapshot(serialize(room));
+  if (room.phase === 'ROLLING') transitionPhase(room, 'ROLLING'); // resta in ROLLING ma fermo
+  persistRoom(room);
   broadcast(room);
   cb && cb({ ok:true });
 });
@@ -937,9 +964,7 @@ socket.on('host:undoPurchase', ({ historyId }, cb) => {
     room.topBid = 0; room.leader = null;
   }
 
-  saveRoomSnapshot(serialize(room));
-  // backup puntuale
-  try { writeBackupFile(serialize(room)); } catch {}
+  persistRoom(room);
   broadcast(room);
   cb && cb({ ok:true });
 });
@@ -964,9 +989,9 @@ socket.on('host:exitAndClose', (_ , cb) => {
   room.deadline = 0;
   room.countdownSec = 0;
   room.currentIndex = 0;       // opzionale: riparti dall’inizio del listone
-  room.phase = 'LOBBY';        // o 'ROLLING' se preferisci pre-roll pronto
+  transitionPhase(room, 'LOBBY');        // o 'ROLLING' se preferisci pre-roll pronto
 
-  saveRoomSnapshot(serialize(room));
+  persistRoom(room);
   broadcast(room);
 
   cb && cb({ ok:true });
@@ -977,7 +1002,7 @@ socket.on('host:skip', (_ , cb) => {
   if (!room.viewPlayers.length) return cb && cb({ error: 'Lista vuota' });
   if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
   room.currentIndex = (room.currentIndex + 1) % room.viewPlayers.length;
-  saveRoomSnapshot(serialize(room)); broadcast(room);
+  persistRoom(room); broadcast(room);
   cb && cb({ ok:true, index: room.currentIndex });
 });
 
@@ -988,7 +1013,7 @@ socket.on('host:backN', ({ n }, cb) => {
   const k = Math.max(1, Math.floor(Number(n||1)));
   const len = room.viewPlayers.length;
   room.currentIndex = ( (room.currentIndex - (k % len)) + len ) % len;
-  saveRoomSnapshot(serialize(room)); broadcast(room);
+  persistRoom(room); broadcast(room);
   cb && cb({ ok:true, index: room.currentIndex });
 });
 
@@ -998,7 +1023,7 @@ socket.on('host:pinPlayer', ({ index }, cb) => {
   if (!Number.isFinite(i) || i < 0 || i >= room.viewPlayers.length) return cb && cb({ error: 'Indice non valido' });
   if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
   room.currentIndex = i;
-  saveRoomSnapshot(serialize(room)); broadcast(room);
+  persistRoom(room); broadcast(room);
   cb && cb({ ok:true });
 });
 
@@ -1009,7 +1034,7 @@ socket.on('host:setRollMs', ({ ms }, cb) => {
   const v = Math.floor(Number(ms || 0));
   if (!Number.isFinite(v) || v < 300 || v > 5000) return cb && cb({ error: 'Valore non valido (300–5000 ms)' });
   room.rollMs = v;
-  saveRoomSnapshot(serialize(room));
+  persistRoom(room);
   room.__rollTickAt = now();
   broadcast(room);
   cb && cb({ ok: true, rollMs: v });
