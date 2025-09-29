@@ -79,8 +79,54 @@ body {
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, .08);
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.topbar > .btn:first-of-type {
+  margin-left: auto;
+}
+
+.topbar > .btn + .btn {
+  margin-left: 8px;
+}
+
+.topbar .btn-outline {
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .28);
+  color: #f2fbff;
+}
+
+.topbar .btn-outline:hover {
+  background: rgba(255, 255, 255, .2);
+  border-color: rgba(255, 255, 255, .34);
+  color: #fff;
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .topbar .brand {
+    flex: 1 0 100%;
+  }
+
+  .topbar > .btn:first-of-type {
+    margin-left: 0;
+  }
+
+  .topbar > .btn {
+    flex: 1 1 48%;
+  }
+
+  .topbar .btn-sm {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: .95rem;
+  }
 }
 
 .brand {
@@ -202,6 +248,12 @@ body {
   font-weight: bold;
   transition: transform .06s ease, filter .2s ease, box-shadow .2s ease;
   touch-action: manipulation;
+}
+
+.btn-sm {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: .9rem;
 }
 
 .btn:hover {
