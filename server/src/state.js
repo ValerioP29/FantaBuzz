@@ -12,6 +12,7 @@ export function makeRoom(id){
   const r = {
     id,
     createdAt: Date.now(),
+    version: 0,
     // Sessioni d'asta: ogni volta che chiudi l'asta e resetti, incrementi sessionEpoch
     sessionEpoch: 1,
 
@@ -43,6 +44,7 @@ export function makeRoom(id){
     rolling: false,
     filterName: '', // nuovo
     autoAssignError: null,
+    __lastSnapshotVersion: 0,
 
   };
 
@@ -265,6 +267,7 @@ export function serialize(room){
   return {
     id: room.id,
     createdAt: room.createdAt,
+    version: room.version || 0,
 
     // Sessione corrente
     sessionEpoch: room.sessionEpoch || 1,
@@ -298,6 +301,7 @@ export function serialize(room){
 export function hydrate(room, snap){
   room.id = snap.id;
   room.createdAt = snap.createdAt || Date.now();
+  room.version = snap.version || 0;
 
   // Sessione
   room.sessionEpoch = snap.sessionEpoch || 1;
@@ -340,6 +344,7 @@ export function hydrate(room, snap){
   room.rolling = false;
   room.lastBuzzBy = {};
   room.autoAssignError = null;
+  room.__lastSnapshotVersion = room.version || 0;
 
   rebuildView(room);
 }
