@@ -56,6 +56,54 @@ const now = () => Date.now();
 
 function makeKey(){ return crypto.randomBytes(16).toString('hex'); }
 
+function extractHostToken(req) {
+  let headerToken = req.headers['x-host-token'];
+  if (Array.isArray(headerToken)) headerToken = headerToken[0];
+  if (typeof headerToken === 'string' && headerToken.trim()) {
+    return headerToken.trim();
+  }
+  const authHeader = req.headers.authorization;
+  if (typeof authHeader === 'string') {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+  return null;
+}
+
+function requireHostAuth(req, res, next) {
+  const room = rooms.get(ROOM_ID);
+  if (!room || !room.hostToken) {
+    return res.status(403).json({ ok: false, error: 'Banditore non attivo' });
+  }
+  const token = extractHostToken(req);
+  if (!token || token !== room.hostToken) {
+    return res.status(403).json({ ok: false, error: 'Autorizzazione host richiesta' });
+  }
+  req.room = room;
+  next();
+}
+
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 10;
+const rateLimitBuckets = new Map();
+
+function importRateLimit(req, res, next) {
+  const nowTs = now();
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+  let bucket = rateLimitBuckets.get(ip);
+  if (!bucket || nowTs - bucket.start > RATE_LIMIT_WINDOW_MS) {
+    bucket = { start: nowTs, count: 0 };
+    rateLimitBuckets.set(ip, bucket);
+  }
+  bucket.count += 1;
+  if (bucket.count > RATE_LIMIT_MAX_REQUESTS) {
+    return res.status(429).json({ ok: false, error: 'Troppi tentativi, riprova più tardi' });
+  }
+  next();
+}
+
 function issueHostToken(room) {
   const token = crypto.randomBytes(16).toString('hex');
   room.hostToken = token;
@@ -286,9 +334,9 @@ try {
 /* ===== API: Import CSV listone =====
   Body: { csv: "<testo csv>", map: { name: 'name', role: 'role' } }
 */
-app.post('/api/listone/import', (req, res) => {
+app.post('/api/listone/import', importRateLimit, requireHostAuth, (req, res) => {
   try{
-    const room = rooms.get(ROOM_ID);
+    const room = req.room || rooms.get(ROOM_ID);
     const { csv, map = { name: 'name', role: 'role' } } = req.body || {};
     if (!csv || typeof csv !== 'string') return res.status(400).json({ ok:false, error:'CSV mancante' });
 
