@@ -1,28 +1,38 @@
 /* global Toastify, XLSX */
 let storedHostToken = null;
-try {
-  storedHostToken = localStorage.getItem('hostToken');
-} catch (_) {}
 
-let clientId = null;
-try {
-  clientId = localStorage.getItem('clientId');
-  if (!clientId) {
-    const gen = (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    clientId = gen;
-    localStorage.setItem('clientId', clientId);
-  }
-} catch (_) {}
+function bootstrapStoredHostToken() {
+  let token = null;
+  try {
+    token = localStorage.getItem('hostToken');
+  } catch (_) {}
+  if (token) setStoredHostToken(token);
+}
 
-const socketAuth = {};
-if (clientId) socketAuth.clientId = clientId;
-if (storedHostToken) socketAuth.hostToken = storedHostToken;
+function ensureClientId() {
+  let id = null;
+  try {
+    id = localStorage.getItem('clientId');
+    if (!id) {
+      const gen = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      id = gen;
+      localStorage.setItem('clientId', id);
+    }
+  } catch (_) {}
+  return id;
+}
 
-const socket = io({ auth: socketAuth });
+const socket = io({ autoConnect: false });
 socket.auth = socket.auth || {};
-Object.assign(socket.auth, socketAuth);
+
+const clientId = ensureClientId();
+if (clientId) socket.auth.clientId = clientId;
+
+bootstrapStoredHostToken();
+socket.connect();
+
 let registered = false;
 let youAreHost = false;
 
@@ -49,8 +59,9 @@ let youAreHost = false;
   });
 })();
 
-if (storedHostToken) {
-  socket.emit('host:reclaim', { token: storedHostToken }, (res)=>{
+const initialHostToken = getHostToken();
+if (initialHostToken) {
+  socket.emit('host:reclaim', { token: initialHostToken }, (res)=>{
     if(res?.ok) notify('Ruolo banditore ripristinato','info');
   });
 }
