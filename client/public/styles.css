@@ -45,7 +45,6 @@
 
 * {
   box-sizing: border-box;
-  font-weight: bold;
 }
 
 html,
@@ -57,6 +56,7 @@ body {
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif;
   font-size: clamp(14px, 1.4vw, 16px);
+  font-weight: 400;
   color: var(--text);
   background: var(--bg);
 }
@@ -199,7 +199,7 @@ body {
   background: #59d2ff;
   color: #0b2a3a;
   cursor: pointer;
-  font-weight: bold;
+  font-weight: 700;
   transition: transform .06s ease, filter .2s ease, box-shadow .2s ease;
   touch-action: manipulation;
 }
@@ -285,6 +285,7 @@ body {
   background: #f8fbff;
   color: #507089;
   font-size: 12px;
+  font-weight: 600;
 }
 
 .badge {
