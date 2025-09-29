@@ -58,17 +58,6 @@
       </div>
     </div>
 
-    <div id="rollControls" class="roll-controls" style="display:none">
-      <button id="btnRollToggle" class="btn">Play/Pausa rullo</button>
-      <label for="hostRollMs">Velocità</label>
-      <select id="hostRollMs" class="btn">
-        <option value="2000" selected>Medio</option>
-        <option value="1000">Veloce</option>
-        <option value="600">Molto veloce</option>
-        <option value="400">Pazzo</option>
-      </select>
-    </div>
-
     <div class="rolebar" id="rolebar">
       <button class="role btn" data-role="P">P</button>
       <button class="role btn" data-role="D">D</button>
@@ -125,6 +114,15 @@
 
 
       <main class="col col-right col-main">
+         <div id="rollControls" class="roll-controls" style="display:none">
+        <button id="btnRollToggle" class="btn">▶</button>
+        <select id="hostRollMs" class="btn">
+          <option value="2000">0.5x</option>
+          <option value="1000" selected>1x</option>
+          <option value="500">2x</option>
+        </select>
+      </div>
+
         <div class="card highlight summary-card">
 
          <div class="slot" aria-live="polite" aria-atomic="true">

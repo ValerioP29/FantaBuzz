@@ -202,7 +202,7 @@ function applyRollMsUI(s){
   const box  = $('rollControls');
   if (!sel || !box) return;
 
-  const canShow = s.youAreHost && __hostView === 'controls';
+  const canShow = s.youAreHost;
   box.style.display = canShow ? '' : 'none';
 
   // sync valore dal server
@@ -393,10 +393,18 @@ if (rollSel) {
 
 $('btnRollToggle')?.addEventListener('click', () => {
   socket.emit('host:toggleRoll', {}, (res)=> {
-    if(res?.error) notify(res.error, 'error');
-    else notify(res.rolling ? 'Rullo in riproduzione' : 'Rullo in pausa', 'info');
+    if(res?.error) return notify(res.error, 'error');
+    const btn = $('btnRollToggle');
+    if (res.rolling) {
+      btn.textContent = '⏸'; // pausa
+      notify('Rullo in riproduzione', 'info');
+    } else {
+      btn.textContent = '▶'; // play
+      notify('Rullo in pausa', 'info');
+    }
   });
 });
+
 
 
 /* Filtri ruolo toggle */
