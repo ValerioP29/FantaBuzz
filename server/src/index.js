@@ -163,12 +163,16 @@ function transitionPhase(room, nextPhase) {
   broadcast(room);
 }
 
-function persistRoom(room, preSerialized = null) {
+function persistRoom(room) {
   if (!room) return null;
-  const snap = preSerialized || serialize(room);
-  saveRoomSnapshot(snap);
-  room.__lastSnapshotVersion = snap.version ?? room.version ?? 0;
-  return snap;
+  try {
+    const snap = serialize(room);
+    saveRoomSnapshot(snap);
+    return snap;
+  } catch (err) {
+    console.error('[persistRoom] Errore durante il salvataggio della stanza:', err);
+    return null;
+  }
 }
 
 function setArmed(room){
@@ -478,7 +482,10 @@ setInterval(() => {
         if (room.leader){
           const pendingSnap = serialize(room);
           // >>> BACKUP TIMESTAMPED QUI <<<
-          try { writeBackupFile(pendingSnap); } catch {}
+          try {
+            const pendingSnap = serialize(room);
+            writeBackupFile(pendingSnap);
+          } catch {}
           scheduleAutoFinalize(room);
         }
       }
