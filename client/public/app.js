@@ -34,6 +34,7 @@ let youAreHost = false;
 
   socket.emit('team:resume', { teamId: saved.teamId, key: saved.key }, (res)=>{
     if (res?.ok) {
+      try { localStorage.setItem('teamSession', JSON.stringify({ teamId: res.teamId, key: res.key })); } catch(_){}
        const myCsv = `/api/export/team/${res.teamId}.csv`;
        const a = $('btnExportMy'); if (a) a.href = myCsv;
       registered = true;

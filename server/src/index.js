@@ -512,7 +512,8 @@ socket.on('team:register', ({ name, credits }, cb) => {
       credits: Number(credits || 0),
       acquisitions: [],
       socketId: socket.id,
-      key: makeKey()
+      key: makeKey(),
+      sessionEpoch: room.sessionEpoch || 1
     };
     room.teams.set(tid, team);
     socket.data.teamId = tid;
@@ -528,20 +529,36 @@ socket.on('team:register', ({ name, credits }, cb) => {
 
 /* RIPRESA SESSIONE dopo refresh: ricollega il socket a un team esistente */
 socket.on('team:resume', ({ teamId, key }, cb) => {
-  try{
+  try {
     if (!teamId || !key) return cb && cb({ error: 'Dati mancanti' });
     const team = room.teams.get(teamId);
     if (!team) return cb && cb({ error: 'Team non trovato' });
+    const currentEpoch = room.sessionEpoch || 1;
+    const teamEpoch = team.sessionEpoch || 1;
+    if (teamEpoch !== currentEpoch) {
+      return cb && cb({ error: 'Sessione scaduta' });
+    }
     if (team.key && key !== team.key) return cb && cb({ error: 'Token non valido' });
+
+    const prevSocketId = team.socketId;
+    if (prevSocketId && prevSocketId !== socket.id) {
+      const prevSocket = io.of('/').sockets.get(prevSocketId);
+      if (prevSocket) {
+        prevSocket.emit('session:revoked');
+        try { prevSocket.disconnect(true); } catch (_) {}
+      }
+    }
 
     // collega questo socket al team
     socket.data.teamId = team.id;
     socket.data.displayName = team.name;
     team.socketId = socket.id;
+    team.key = makeKey();
+    team.sessionEpoch = currentEpoch;
 
     saveRoomSnapshot(serialize(room));
     broadcast(room);
-    cb && cb({ ok:true, teamId: team.id, name: team.name, credits: team.credits });
+    cb && cb({ ok:true, teamId: team.id, name: team.name, credits: team.credits, key: team.key });
   } catch(e){
     cb && cb({ error: e?.message || 'Errore resume' });
   }

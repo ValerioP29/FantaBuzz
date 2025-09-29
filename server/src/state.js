@@ -272,7 +272,12 @@ export function serialize(room){
     hostOwner: null, // non persistiamo chi è host
 
     teams: [...room.teams.values()].map(t => ({
-      id: t.id, name: t.name, credits: t.credits, acquisitions: t.acquisitions || [], key: t.key || null
+      id: t.id,
+      name: t.name,
+      credits: t.credits,
+      acquisitions: t.acquisitions || [],
+      key: t.key || null,
+      sessionEpoch: t.sessionEpoch || room.sessionEpoch || 1
     })),
 
     phase: room.phase,
@@ -315,7 +320,15 @@ export function hydrate(room, snap){
   // Team
   room.teams = new Map();
   for (const t of snap.teams || []) {
-    room.teams.set(t.id, { id: t.id, name: t.name, credits: t.credits, acquisitions: t.acquisitions || [], key: t.key || null, socketId: null });
+    room.teams.set(t.id, {
+      id: t.id,
+      name: t.name,
+      credits: t.credits,
+      acquisitions: t.acquisitions || [],
+      key: t.key || null,
+      sessionEpoch: t.sessionEpoch || room.sessionEpoch || 1,
+      socketId: null
+    });
   }
 
   // Volatili
