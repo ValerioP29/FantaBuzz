@@ -548,7 +548,7 @@ io.on('connection', socket => {
 
   if (canRecoverHost) {
     room.hostOwner = socket.id;
-    room.hostOwnerClientId = socket.data.clientId || null;
+    if (socket.data?.clientId) room.hostOwnerClientId = socket.data.clientId;
     hostRecovered = true;
   }
 
@@ -639,7 +639,8 @@ socket.on('host:toggle', ({ pin } = {}, cb) => {
   if (!room.hostOwner) {
     if (HOST_PIN && pin !== HOST_PIN) return cb && cb({ error: 'PIN mancante o errato' });
     room.hostOwner = socket.id;
-    room.hostOwnerClientId = socket.data?.clientId || null;
+    if (socket.data?.clientId) room.hostOwnerClientId = socket.data.clientId;
+    if (room.phase === 'LOBBY') transitionPhase(room, 'ROLLING');
     const token = issueHostToken(room);
     const wasLobby = room.phase === 'LOBBY';
     if (wasLobby) {
