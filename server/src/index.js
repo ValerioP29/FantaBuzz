@@ -126,12 +126,16 @@ function transitionPhase(room, nextPhase) {
   room.version = (room.version || 0) + 1;
 }
 
-function persistRoom(room, preSerialized = null) {
+function persistRoom(room) {
   if (!room) return null;
-  const snap = preSerialized || serialize(room);
-  saveRoomSnapshot(snap);
-  room.__lastSnapshotVersion = snap.version ?? room.version ?? 0;
-  return snap;
+  try {
+    const snap = serialize(room);
+    saveRoomSnapshot(snap);
+    return snap;
+  } catch (err) {
+    console.error('[persistRoom] Errore durante il salvataggio della stanza:', err);
+    return null;
+  }
 }
 
 function setArmed(room){
@@ -341,10 +345,6 @@ function scheduleAutoFinalize(room) {
       broadcast(room);
       return;
     }
-    if ((room.__lastSnapshotVersion || 0) === (room.version || 0)) {
-      broadcast(room);
-      return;
-    }
     persistRoom(room);
     broadcast(room);
   });
@@ -452,10 +452,12 @@ setInterval(() => {
         if (room.leader){
           // crea entry pending, verrà completata in winner:autoAssign
           mkHistoryPending(room);
-          const pendingSnap = serialize(room);
-          persistRoom(room, pendingSnap);
+          persistRoom(room);
           // >>> BACKUP TIMESTAMPED QUI <<<
-          try { writeBackupFile(pendingSnap); } catch {}
+          try {
+            const pendingSnap = serialize(room);
+            writeBackupFile(pendingSnap);
+          } catch {}
           scheduleAutoFinalize(room);
         }
         broadcast(room);
@@ -757,8 +759,7 @@ socket.on('team:bid_inc', ({ amount }, cb) => {
   room.topBid = proposed;
   room.leader = tid;
   setArmed(room);
-  const snap = serialize(room);
-  persistRoom(room, snap);
+  persistRoom(room);
   broadcast(room);
   cb && cb({ ok: true, topBid: room.topBid, warn: v.warn });
 });
@@ -789,8 +790,7 @@ socket.on('team:bid_free', ({ value }, cb) => {
   room.topBid = val;
   room.leader = tid;
   setArmed(room);
-  const snap = serialize(room);
-  persistRoom(room, snap);
+  persistRoom(room);
   broadcast(room);
   cb && cb({ ok: true, topBid: room.topBid, warn: v.warn });
 });
@@ -810,8 +810,7 @@ socket.on('team:bid_free', ({ value }, cb) => {
       }
       return cb && cb({ error: result.error });
     }
-    const snap = serialize(room);
-    persistRoom(room, snap);
+    persistRoom(room);
     broadcast(room);
     cb && cb({ ok: true });
   });
