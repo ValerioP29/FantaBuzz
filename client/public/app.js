@@ -77,6 +77,28 @@ const notify = (text, type='info') => {
   Toastify({ text, duration: 2400, gravity: "top", position: "center", style: {background: bg} }).showToast();
 };
 
+function setStoredHostToken(token) {
+  storedHostToken = token || null;
+  try {
+    if (storedHostToken) {
+      localStorage.setItem('hostToken', storedHostToken);
+    } else {
+      localStorage.removeItem('hostToken');
+    }
+  } catch (_) {}
+  socket.auth = socket.auth || {};
+  if (storedHostToken) {
+    socket.auth.hostToken = storedHostToken;
+  } else if (socket?.auth && 'hostToken' in socket.auth) {
+    delete socket.auth.hostToken;
+  }
+}
+
+function getHostToken() {
+  if (socket?.auth?.hostToken) return socket.auth.hostToken;
+  return storedHostToken;
+}
+
 /* ===== RENDER LATO PARTECIPANTI ===== */
 function renderParticipantsManage(s){
   const ul = $('manageList'); ul.innerHTML = '';
@@ -361,16 +383,11 @@ $('btnHostToggle').onclick = () => {
     }
     if (res.host && res.hostToken) {
       document.body.dataset.hostPinAsked = '1';
-      try { localStorage.setItem('hostToken', res.hostToken); } catch(_){}
-      socket.auth = socket.auth || {};
-      socket.auth.hostToken = res.hostToken;
+      setStoredHostToken(res.hostToken);
       notify('Hai preso il ruolo di banditore', 'info');
     } else if (!res.host) {
       delete document.body.dataset.hostPinAsked;
-      try { localStorage.removeItem('hostToken'); } catch(_){}
-      if (socket?.auth && 'hostToken' in socket.auth) {
-        delete socket.auth.hostToken;
-      }
+      setStoredHostToken(null);
       notify('Hai lasciato il ruolo', 'info');
     }
   });
@@ -565,9 +582,12 @@ fileInput.onchange = async (e) => {
     }
 
     // POST al backend
+    const headers = { 'Content-Type':'application/json' };
+    const hostToken = getHostToken();
+    if (hostToken) headers['x-host-token'] = hostToken;
     const res = await fetch('/api/listone/import', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json' },
+      headers,
       body: JSON.stringify({
         csv: csvText,
         map: { name:'Nome', role:'Ruolo', team:'Squadra', fm:'FM', out:'Fuori lista' }
@@ -656,12 +676,7 @@ $('btnHostExitAndClose').addEventListener('click', () => {
   if (!confirm('Confermi? Verranno rimossi partecipanti e aggiudicazioni.')) return;
   socket.emit('host:exitAndClose', {}, (res) => {
     if (res?.error) return notify(res.error, 'error');
-    try {
-      localStorage.removeItem('hostToken'); // <<< AGGIUNGI QUESTO
-    } catch(_) {}
-    if (socket?.auth && 'hostToken' in socket.auth) {
-      delete socket.auth.hostToken;
-    }
+    setStoredHostToken(null);
     notify('Asta chiusa. Sessione azzerata.', 'info');
     location.reload(); // <<< meglio forzare reset
   });
@@ -676,14 +691,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 })
 
-  socket.on('you:kicked', ()=>{
+socket.on('you:kicked', ()=>{
   try {
     localStorage.removeItem('teamSession');
-    localStorage.removeItem('hostToken');
   } catch(_){}
-  if (socket?.auth && 'hostToken' in socket.auth) {
-    delete socket.auth.hostToken;
-  }
+  setStoredHostToken(null);
   location.href = '/';
 });
 
