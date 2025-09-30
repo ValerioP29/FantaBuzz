@@ -165,10 +165,50 @@ body {
 .col .card,
 .card-lg {
   background: var(--surface);
-  border: 1px solid var(--outline);
+  border: 1px solid rgba(15, 23, 42, .06);
   border-radius: var(--radius);
   padding: 18px;
   box-shadow: var(--shadow);
+}
+
+.card > header,
+.card > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.card > header {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(15, 23, 42, .06);
+}
+
+.card > footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(15, 23, 42, .06);
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--outline);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: .9rem;
 }
 
 .card-lg {
@@ -449,21 +489,72 @@ body {
 }
 
 .list li {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
   align-items: center;
   padding: 10px 12px;
   border: 1px solid var(--outline);
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--surface-2);
   margin-bottom: 8px;
-  box-shadow: var(--shadow);
+  font-size: .95rem;
+}
+
+.list li > :first-child {
+  min-width: 0;
+}
+
+.list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.list li strong {
+  margin-left: auto;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.list li.empty-state {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  text-align: center;
+  color: var(--muted);
+  background: none;
+  border-style: dashed;
 }
 
 .list .meta {
   color: #6b7280;
   font-size: 12px;
   margin-left: 8px
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mt-sm {
+  margin-top: .5rem;
+}
+
+.mt-md {
+  margin-top: .75rem;
+}
+
+.card-divider {
+  width: 100%;
+  height: 1px;
+  background: rgba(15, 23, 42, .08);
+  border-radius: 999px;
+  margin: 12px 0;
 }
 
 /* Highlight in card azzurra tenue */
@@ -474,6 +565,69 @@ body {
 }
 
 /* Summary */
+.muted {
+  color: var(--muted);
+}
+
+.card-note {
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+.summary-title {
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: .8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+details {
+  display: block;
+}
+
+summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  list-style: none;
+}
+
+summary::marker,
+summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary-title::after {
+  content: "";
+  width: .65rem;
+  height: .65rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform .2s ease;
+  margin-left: 4px;
+}
+
+details[open] .summary-title::after {
+  transform: rotate(45deg);
+}
+
+summary:focus-visible .summary-title,
+summary:hover .summary-title {
+  color: var(--text);
+}
+
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
 .summary-card {
   padding: 16px 18px 20px;
   display: flex;

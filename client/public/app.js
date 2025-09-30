@@ -89,6 +89,14 @@ const notify = (text, type='info') => {
   Toastify({ text, duration: 2400, gravity: "top", position: "center", style: {background: bg} }).showToast();
 };
 
+function renderEmptyState(listEl, message) {
+  if (!listEl) return;
+  const li = document.createElement('li');
+  li.classList.add('empty-state');
+  li.textContent = message;
+  listEl.appendChild(li);
+}
+
 function setStoredHostToken(token) {
   storedHostToken = token || null;
   try {
@@ -113,18 +121,33 @@ function getHostToken() {
 
 /* ===== RENDER LATO PARTECIPANTI ===== */
 function renderParticipantsManage(s){
-  const ul = $('manageList'); ul.innerHTML = '';
+  const ul = $('manageList');
+  if (!ul) return;
+  ul.innerHTML = '';
+  const total = s.participants.length;
+  const countEl = $('participantsCount');
+  if (countEl) {
+    countEl.textContent = total;
+    countEl.setAttribute('aria-label', `Totale partecipanti: ${total}`);
+  }
+  if (!total) {
+    renderEmptyState(ul, 'Nessun partecipante registrato al momento.');
+    return;
+  }
   for (const p of s.participants){
     const li = document.createElement('li');
-    li.innerHTML = `<span class="fs-5">${p.name}</span>
+    li.innerHTML = `
       <div>
+        <span class="fs-5">${p.name}</span>
+      </div>
+      <div class="list-actions">
         ${youAreHost ? `<button class="btn btn-outline btn-kick" data-id="${p.id}"><i class="bi bi-x-octagon fw-bold"></i></button>` : ''}
         <strong class="fs-5">${p.credits}</strong>
       </div>`;
     ul.appendChild(li);
   }
   if (youAreHost){
-    for (const b of document.querySelectorAll('.btn-kick')){
+    ul.querySelectorAll('.btn-kick').forEach((b)=>{
       b.onclick = () => {
         const id = b.dataset.id;
         socket.emit('host:kick', { teamId: id }, (res)=>{
@@ -132,27 +155,41 @@ function renderParticipantsManage(s){
           else notify('Partecipante rimosso', 'success');
         });
       };
-    }
+    });
   }
 }
 
 function renderHistory(s){
-  const ul = $('historyList'); ul.innerHTML = '';
+  const ul = $('historyList');
+  if (!ul) return;
+  ul.innerHTML = '';
   const list = s.recentAssignments || [];
+  const total = list.length;
+  const countEl = $('historyCount');
+  if (countEl) {
+    countEl.textContent = total;
+    countEl.setAttribute('aria-label', `Totale aggiudicazioni registrate: ${total}`);
+  }
+  if (!total) {
+    renderEmptyState(ul, 'Nessuna aggiudicazione registrata.');
+    return;
+  }
   for (const h of list.slice().reverse()){ // più recenti in alto
     const li = document.createElement('li');
     const when = new Date(h.at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     li.innerHTML = `
-      <span>${h.playerName || '—'} <small>(${h.role || '—'})</small>
-        <span class="meta">a ${h.teamName} per ${h.price} • ${when}</span>
-      </span>
       <div>
+        <span>${h.playerName || '—'} <small>(${h.role || '—'})</small>
+          <span class="meta">a ${h.teamName} per ${h.price} • ${when}</span>
+        </span>
+      </div>
+      <div class="list-actions">
         ${youAreHost ? `<button class="btn btn-outline btn-undo" data-id="${h.id}">Elimina</button>` : ''}
       </div>`;
     ul.appendChild(li);
   }
   if (youAreHost){
-    for (const b of document.querySelectorAll('.btn-undo')){
+    ul.querySelectorAll('.btn-undo').forEach((b)=>{
       b.onclick = () => {
         const id = b.dataset.id;
         if (!confirm('Confermi l’eliminazione di questa aggiudicazione?')) return;
@@ -161,15 +198,32 @@ function renderHistory(s){
           else notify('Aggiudicazione eliminata', 'success');
         });
       };
-    }
+    });
   }
 }
 
 function renderAcquisitions(list){
-  const ul = $('acqList'); ul.innerHTML='';
-  for (const a of list){
+  const ul = $('acqList');
+  if (!ul) return;
+  ul.innerHTML='';
+  const items = Array.isArray(list) ? list : [];
+  const total = items.length;
+  const countEl = $('acqCount');
+  if (countEl) {
+    countEl.textContent = total;
+    countEl.setAttribute('aria-label', `Totale acquisti: ${total}`);
+  }
+  if (!total) {
+    renderEmptyState(ul, 'Non hai ancora effettuato acquisti.');
+    return;
+  }
+  for (const a of items){
     const li = document.createElement('li');
-    li.innerHTML = `<span>${a.player} <small>(${a.role})</small></span><strong>${a.price}</strong>`;
+    li.innerHTML = `
+      <div>
+        <span>${a.player} <small>(${a.role})</small></span>
+      </div>
+      <strong>${a.price}</strong>`;
     ul.appendChild(li);
   }
 }
