@@ -90,7 +90,7 @@ const toastBackgrounds = {
   info: 'var(--toast-info)'
 };
 
-const notify = (text, type='info') => {
+function notify(text, type = 'info') {
   const key = toastBackgrounds[type] ? type : 'info';
   Toastify({
     text,
@@ -100,7 +100,7 @@ const notify = (text, type='info') => {
     className: `toast-theme toast-${key}`,
     style: { background: toastBackgrounds[key] }
   }).showToast();
-};
+}
 
 function updateRollToggleUI(isRolling) {
   const btn = $('btnRollToggle');
