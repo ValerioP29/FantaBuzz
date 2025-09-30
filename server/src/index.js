@@ -727,13 +727,8 @@ socket.on('host:setFilterName', ({ q }, cb) => {
 // reclaim su reload
 socket.on('host:reclaim', ({ token }, cb)=>{
   if(!token || token !== room.hostToken) return cb && cb({ error:'Token host non valido' });
-  if (room.hostOwnerClientId && socket.data?.clientId && room.hostOwnerClientId !== socket.data.clientId) {
-    return cb && cb({ error: 'Token host non valido' });
-  }
   room.hostOwner = socket.id;
-  if (socket.data?.clientId) {
-    room.hostOwnerClientId = socket.data.clientId;
-  }
+  room.hostOwnerClientId = socket.data?.clientId ?? null;
   persistRoom(room);
   cb && cb({ ok:true });
   broadcast(room);
