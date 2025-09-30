@@ -9,6 +9,28 @@ function bootstrapStoredHostToken() {
   if (token) setStoredHostToken(token);
 }
 
+function setStoredHostToken(token) {
+  storedHostToken = token || null;
+  try {
+    if (storedHostToken) {
+      localStorage.setItem('hostToken', storedHostToken);
+    } else {
+      localStorage.removeItem('hostToken');
+    }
+  } catch (_) {}
+  socket.auth = socket.auth || {};
+  if (storedHostToken) {
+    socket.auth.hostToken = storedHostToken;
+  } else if (socket?.auth && 'hostToken' in socket.auth) {
+    delete socket.auth.hostToken;
+  }
+}
+
+function getHostToken() {
+  if (socket?.auth?.hostToken) return socket.auth.hostToken;
+  return storedHostToken;
+}
+
 function ensureClientId() {
   let id = null;
   try {
@@ -149,28 +171,6 @@ function renderEmptyState(listEl, message) {
   li.classList.add('empty-state');
   li.textContent = message;
   listEl.appendChild(li);
-}
-
-function setStoredHostToken(token) {
-  storedHostToken = token || null;
-  try {
-    if (storedHostToken) {
-      localStorage.setItem('hostToken', storedHostToken);
-    } else {
-      localStorage.removeItem('hostToken');
-    }
-  } catch (_) {}
-  socket.auth = socket.auth || {};
-  if (storedHostToken) {
-    socket.auth.hostToken = storedHostToken;
-  } else if (socket?.auth && 'hostToken' in socket.auth) {
-    delete socket.auth.hostToken;
-  }
-}
-
-function getHostToken() {
-  if (socket?.auth?.hostToken) return socket.auth.hostToken;
-  return storedHostToken;
 }
 
 /* ===== RENDER LATO PARTECIPANTI ===== */
