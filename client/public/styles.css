@@ -1,46 +1,23 @@
 /* ===== Leghe-style chiaro ===== */
 :root {
-  /* Base chiara */
-  --bg: #989a9c;
-  /* sfondo pagina */
+  --bg: #f3f4f6;
   --surface: #ffffff;
-  /* card bianche */
-  --surface-2: #ffffff;
-
-  /* Testi */
+  --surface-2: #f8fafc;
   --text: #0f172a;
-  /* quasi nero */
-  --muted: #363940;
-  /* grigio descrizioni */
-
-  /* Blu/azzurri tipici app */
-  --brand-top-start: #243b77;
-  /* header blu scuro */
-  --brand-top-end: #1aa0c9;
-  /* header azzurro */
-  --accent: #22b8e6;
-  /* link/indicatori */
-  --accent-dark: #1a90b8;
-
-  /* CTA celesti */
-  --primary: #59d2ff;
-  /* bottone azzurro pieno */
-  --primary-2: #3bc3ff;
-  /* shade al press */
-  --primary-text: #083042;
-  /* testo scuro su cta */
-
-  /* Bordi/ombre */
-  --outline: #a7c8f2;
-  /* grigio bordi chiari */
-  --shadow: 0 8px 24px rgba(15, 23, 42, .08);
-
-  /* Stati */
-  --danger: #d94848;
-  --warning: #b7791f;
-  --success: #2ea44f;
-
-  --radius: 16px;
+  --muted: #5b6575;
+  --brand-top-start: #0f172a;
+  --brand-top-end: #1d4ed8;
+  --accent: #2563eb;
+  --accent-dark: #1e40af;
+  --primary: #2563eb;
+  --primary-2: #1d4ed8;
+  --primary-text: #f8fafc;
+  --outline: rgba(37, 99, 235, .18);
+  --shadow: 0 24px 40px rgba(15, 23, 42, .08);
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --success: #16a34a;
+  --radius: 18px;
 }
 
 * {
@@ -57,6 +34,7 @@ body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif;
   font-size: clamp(14px, 1.4vw, 16px);
   font-weight: 400;
+  line-height: 1.5;
   color: var(--text);
   background: var(--bg);
 }
