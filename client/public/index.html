@@ -70,45 +70,58 @@
 
   <!-- PARTECIPANTI (sempre visibile; se sei host compaiono i bottoni Rimuovi) -->
   <div class="card" id="participantsCard">
+    <header>
+      <h2 class="card-title">Partecipanti</h2>
+      <span class="card-meta" id="participantsCount" aria-live="polite">0</span>
+    </header>
     <details open>
-      <summary class="summary-title">Manager:</summary>
-      <ul id="manageList" class="list"></ul>
+      <summary class="summary-title">Elenco manager</summary>
+      <ul id="manageList" class="list mt-sm"></ul>
     </details>
   </div>
 
   <!-- AGGIUDICAZIONI RECENTI (sempre visibile; se sei host compaiono i bottoni Elimina) -->
   <div class="card" id="historyCard">
+    <header>
+      <h2 class="card-title">Aggiudicazioni</h2>
+      <span class="card-meta" id="historyCount" aria-live="polite">0</span>
+    </header>
     <details>
-      <summary class="summary-title">Aggiudicazioni recenti</summary>
-      <ul id="historyList" class="list"></ul>
+      <summary class="summary-title">Log recente</summary>
+      <ul id="historyList" class="list mt-sm"></ul>
     </details>
   </div>
 
   <!-- IMPORT / EXPORT (solo per host, nella vista "Controlli") -->
   <div class="card" id="importCard">
+    <header>
+      <h2 class="card-title">Import/Export</h2>
+    </header>
     <details open>
-      <summary class="summary-title">Import/Export</summary>
-
+      <summary class="summary-title">Importa liste</summary>
+      <div class="stack mt-sm">
+        <div class="row gap">
+          <button id="btnImportFile" class="btn btn-primary">Importa XLSX/CSV</button>
+          <input id="fileImport" type="file" accept=".xlsx,.csv" style="display:none" />
+        </div>
+        <p class="muted card-note">
+          Atteso Excel con colonne: <code>Nome</code>, <code>Fuori lista</code>, <code>Sq.</code>, <code>R.</code>, <code>FM</code>.
+          Le righe con <code>Fuori lista = *</code> vengono scartate. <code>R.</code> normalizzato in P/D/C/A. <code>FM</code> accetta la virgola.
+        </p>
+      </div>
+    </details>
+    <div class="card-divider" role="presentation"></div>
+    <footer>
       <div class="row gap">
-        <button id="btnImportFile" class="btn btn-primary">Importa XLSX/CSV</button>
-        <input id="fileImport" type="file" accept=".xlsx,.csv" style="display:none" />
-      </div>
-
-      <div class="muted" style="margin-top:.5rem">
-        Atteso Excel con colonne: <code>Nome</code>, <code>Fuori lista</code>, <code>Sq.</code>, <code>R.</code>, <code>FM</code>.
-        Le righe con <code>Fuori lista = *</code> vengono scartate. <code>R.</code> normalizzato in P/D/C/A. <code>FM</code> accetta la virgola.
-      </div>
-
-      <div class="row gap" style="margin-top:.75rem">
         <a class="btn btn-outline" href="/api/export/teams.csv" target="_blank" rel="noopener">Export squadre (CSV)</a>
         <a class="btn btn-outline" href="/api/export/history.csv" target="_blank" rel="noopener">Export aggiudicazioni (CSV)</a>
         <a class="btn btn-outline" href="/api/export/all.json" target="_blank" rel="noopener">Export completo (JSON)</a>
       </div>
-    </details>
-    <div class="row gap" style="margin-top:.5rem">
-      <a id="btnExportMy" class="btn btn-outline" href="#" target="_blank" rel="noopener">Export mia rosa (CSV)</a>
-      <a class="btn btn-outline" href="/api/export/remaining.csv" target="_blank" rel="noopener">Listone residuo (CSV)</a>
-    </div>
+      <div class="row gap mt-sm">
+        <a id="btnExportMy" class="btn btn-outline" href="#" target="_blank" rel="noopener">Export mia rosa (CSV)</a>
+        <a class="btn btn-outline" href="/api/export/remaining.csv" target="_blank" rel="noopener">Listone residuo (CSV)</a>
+      </div>
+    </footer>
   </div>
 </aside>
 
@@ -150,9 +163,12 @@
           </div>
         </div>
 
-        <div class="card">
-          <h3>I tuoi acquisti</h3>
-          <ul id="acqList" class="list list-cards"></ul>
+        <div class="card" id="acqCard">
+          <header>
+            <h3 class="card-title">I tuoi acquisti</h3>
+            <span class="card-meta" id="acqCount" aria-live="polite">0</span>
+          </header>
+          <ul id="acqList" class="list list-cards mt-sm"></ul>
         </div>
       </main>
     </div>
