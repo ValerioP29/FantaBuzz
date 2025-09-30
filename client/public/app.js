@@ -35,6 +35,7 @@ socket.connect();
 
 let registered = false;
 let youAreHost = false;
+let lastPlayerName = null;
 
 // Tentativo di resume sessione da localStorage
 (function tryResume(){
