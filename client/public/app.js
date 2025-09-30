@@ -117,8 +117,8 @@ function renderParticipantsManage(s){
   for (const p of s.participants){
     const li = document.createElement('li');
     li.innerHTML = `<span class="fs-5">${p.name}</span>
-      <div>
-        ${youAreHost ? `<button class="btn btn-outline btn-kick" data-id="${p.id}"><i class="bi bi-x-octagon fw-bold"></i></button>` : ''}
+      <div class="delete-manager">
+        ${youAreHost ? `<button class="btn btn-outline btn-kick" data-id="${p.id}"><i class="bi bi-x-octagon fw-bold fs-3"></i></button>` : ''}
         <strong class="fs-5">${p.credits}</strong>
       </div>`;
     ul.appendChild(li);

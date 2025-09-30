@@ -80,15 +80,16 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, .08);
   display: flex;
   align-items: center;
+  justify-content: space-around;
   gap: 12px;
   flex-wrap: wrap;
 }
 
-.topbar > .btn:first-of-type {
+.topbar>.btn:first-of-type {
   margin-left: auto;
 }
 
-.topbar > .btn + .btn {
+.topbar>.btn+.btn {
   margin-left: 8px;
 }
 
@@ -114,18 +115,15 @@ body {
     flex: 1 0 100%;
   }
 
-  .topbar > .btn:first-of-type {
+  .topbar>.btn:first-of-type {
     margin-left: 0;
-  }
-
-  .topbar > .btn {
-    flex: 1 1 48%;
   }
 
   .topbar .btn-sm {
     min-height: 38px;
     padding: 0 14px;
     font-size: .95rem;
+    width: 50%;
   }
 }
 
@@ -286,7 +284,7 @@ body {
 }
 
 /* CTA azzurre come nello screen */
-.btn-primary {
+.btn-outline {
   background: linear-gradient(180deg, var(--primary), var(--primary-2));
   color: var(--primary-text);
   font-weight: 800;
@@ -294,7 +292,7 @@ body {
   box-shadow: 0 6px 18px rgba(34, 184, 230, .24);
 }
 
-.btn-primary:hover {
+.btn-outline:hover {
   filter: none;
   box-shadow: 0 10px 28px rgba(34, 184, 230, .30)
 }
@@ -328,6 +326,22 @@ body {
 
 .btn.btn-outline:hover {
   border-color: #9cd6ee
+}
+
+.btn-kick {
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.btn-kick:hover {
+  background-color: aqua;
+}
+
+.delete-manager {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* Stato host attivo in azzurro pieno */
