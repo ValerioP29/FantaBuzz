@@ -140,6 +140,8 @@ function updateCountdownUI(phase, countdownSec) {
   el.textContent = display;
   el.classList.remove(...countdownClasses);
   if (state) el.classList.add(state);
+}
+
 function renderEmptyState(listEl, message) {
   if (!listEl) return;
   const li = document.createElement('li');
@@ -849,7 +851,6 @@ $('btnHostViewControls')?.addEventListener('click', ()=>{
     syncSearchVisibility(window.__last_state);
   }
 });
-}
 
 
 
