@@ -82,12 +82,65 @@ if (initialHostToken) {
 
 
 function $(id){ return document.getElementById(id); }
-const notify = (text, type='info') => {
-  const bg = type === 'success' ? "linear-gradient(135deg,#22c55e,#16a34a)"
-           : type === 'error'   ? "linear-gradient(135deg,#ef4444,#b91c1c)"
-           : "linear-gradient(135deg,#7dd3fc,#38bdf8)";
-  Toastify({ text, duration: 2400, gravity: "top", position: "center", style: {background: bg} }).showToast();
+
+const toastBackgrounds = {
+  success: 'var(--toast-success)',
+  error: 'var(--toast-error)',
+  info: 'var(--toast-info)'
 };
+
+const notify = (text, type='info') => {
+  const key = toastBackgrounds[type] ? type : 'info';
+  Toastify({
+    text,
+    duration: 2400,
+    gravity: 'top',
+    position: 'center',
+    className: `toast-theme toast-${key}`,
+    style: { background: toastBackgrounds[key] }
+  }).showToast();
+};
+
+function updateRollToggleUI(isRolling) {
+  const btn = $('btnRollToggle');
+  if (!btn) return;
+  const stateEl = btn.querySelector('.roll-state');
+  btn.classList.toggle('is-rolling', !!isRolling);
+  if (stateEl) stateEl.textContent = isRolling ? 'Pausa' : 'Play';
+  btn.setAttribute('aria-pressed', isRolling ? 'true' : 'false');
+}
+
+const countdownClasses = ['countdown-idle', 'countdown-safe', 'countdown-warning', 'countdown-danger'];
+
+function updateCountdownUI(phase, countdownSec) {
+  const el = $('countdown');
+  if (!el) return;
+
+  const safeNumber = (value) => {
+    const num = typeof value === 'number' ? value : Number.parseInt(value, 10);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  let display = '—';
+  let state = 'countdown-idle';
+
+  if (phase === 'COUNTDOWN') {
+    display = countdownSec ?? '—';
+    const sec = safeNumber(countdownSec);
+    if (sec !== null) {
+      if (sec >= 3) state = 'countdown-safe';
+      else if (sec === 2) state = 'countdown-warning';
+      else state = 'countdown-danger';
+    }
+  } else if (phase === 'ARMED') {
+    display = '3';
+    state = 'countdown-safe';
+  }
+
+  el.textContent = display;
+  el.classList.remove(...countdownClasses);
+  if (state) el.classList.add(state);
+}
 
 function setStoredHostToken(token) {
   storedHostToken = token || null;
@@ -228,7 +281,7 @@ function drawSlotWindow(current, prev, next){
 function resetSummaryUI(){
   $('sumBid').textContent = 0;
   $('sumLeader').textContent = '—';
-  $('countdown').textContent = '—';
+  updateCountdownUI('IDLE');
 }
 
 function applyRollMsUI(s){
@@ -286,6 +339,7 @@ function applyState(s){
 
   const duringAuction = ['RUNNING','ARMED','COUNTDOWN'].includes(s.phase);
   $('btnRollToggle').disabled = !youAreHost || duringAuction;
+  updateRollToggleUI(!!s.rolling);
 
   const filtersLockedMsg = 'Puoi cambiare filtri solo quando l’asta è ferma o dopo l’assegnazione.';
   const searchInput = $('searchPlayer');
@@ -310,9 +364,7 @@ function applyState(s){
   $('sumBid').textContent = s.topBid;
   $('sumLeader').textContent = s.leaderName || '—';
   $('sumCredits').textContent = s.youCredits ?? '—';
-  $('countdown').textContent =
-    (s.phase === 'COUNTDOWN' ? s.countdownSec :
-     (s.phase === 'ARMED' ? '3' : '—'));
+  updateCountdownUI(s.phase, s.countdownSec);
 
   renderParticipantsManage(s);
   renderHistory(s);
@@ -423,14 +475,8 @@ if (rollSel) {
 $('btnRollToggle')?.addEventListener('click', () => {
   socket.emit('host:toggleRoll', {}, (res)=> {
     if(res?.error) return notify(res.error, 'error');
-    const btn = $('btnRollToggle');
-    if (res.rolling) {
-      btn.textContent = '⏸'; // pausa
-      notify('Rullo in riproduzione', 'info');
-    } else {
-      btn.textContent = '▶'; // play
-      notify('Rullo in pausa', 'info');
-    }
+    updateRollToggleUI(!!res.rolling);
+    notify(res.rolling ? 'Rullo in riproduzione' : 'Rullo in pausa', 'info');
   });
 });
 
