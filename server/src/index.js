@@ -42,7 +42,15 @@ app.use(express.json({ limit: '5mb' }));
 
 const STATIC_DIR = path.resolve(__dirname, '../../client/public');
 app.use('/', express.static(STATIC_DIR, {
-  setHeaders(res, filePath){ if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store'); }
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-store');
+      return;
+    }
+    if (/\.(?:js|css)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
 }));
 
 const ROOM_ID = 'DEFAULT';
