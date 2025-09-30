@@ -85,7 +85,20 @@ let lastPlayerName = null;
 const initialHostToken = getHostToken();
 if (initialHostToken) {
   socket.emit('host:reclaim', { token: initialHostToken }, (res)=>{
-    if(res?.ok) notify('Ruolo banditore ripristinato','info');
+    if(res?.ok) {
+      notify('Ruolo banditore ripristinato','info');
+      youAreHost = true;
+      __hostView = 'controls';
+      if (window.__last_state) {
+        applyHostPanels(window.__last_state);
+        applyRollMsUI(window.__last_state);
+        syncSearchVisibility(window.__last_state);
+      } else {
+        applyHostPanels({ youAreHost: true });
+      }
+    } else {
+      notify(res?.error || 'Impossibile ripristinare il ruolo banditore', 'error');
+    }
   });
 }
 
