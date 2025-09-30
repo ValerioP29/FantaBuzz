@@ -127,8 +127,11 @@
 
       <main class="col col-right col-main">
          <div id="rollControls" class="roll-controls" style="display:none">
-        <button id="btnRollToggle" class="btn">▶</button>
-        <select id="hostRollMs" class="btn">
+        <button id="btnRollToggle" class="btn" type="button" aria-pressed="false">
+          <span class="icon-play" aria-hidden="true"></span>
+          <span class="roll-state">Play</span>
+        </button>
+        <select id="hostRollMs" aria-label="Velocità rullo">
           <option value="2000">0.5x</option>
           <option value="1000" selected>1x</option>
           <option value="500">2x</option>
@@ -146,7 +149,7 @@
             <div class="summary-item"><div class="label">Leader</div><div class="value" id="sumLeader">—</div></div>
             <div class="summary-item"><div class="label">I tuoi crediti</div><div class="value" id="sumCredits">—</div></div>
             <div class="summary-item countdown-wrap" role="status" aria-live="polite" aria-atomic="true">
-            <div class="label">Countdown</div><div class="countdown" id="countdown">—</div>
+            <div class="label">Countdown</div><div class="countdown countdown-idle" id="countdown">—</div>
             </div>
           </div>
           <div id="bidsBox" class="bids">
