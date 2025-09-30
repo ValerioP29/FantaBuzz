@@ -82,12 +82,71 @@ if (initialHostToken) {
 
 
 function $(id){ return document.getElementById(id); }
-const notify = (text, type='info') => {
-  const bg = type === 'success' ? "linear-gradient(135deg,#22c55e,#16a34a)"
-           : type === 'error'   ? "linear-gradient(135deg,#ef4444,#b91c1c)"
-           : "linear-gradient(135deg,#7dd3fc,#38bdf8)";
-  Toastify({ text, duration: 2400, gravity: "top", position: "center", style: {background: bg} }).showToast();
+
+const toastBackgrounds = {
+  success: 'var(--toast-success)',
+  error: 'var(--toast-error)',
+  info: 'var(--toast-info)'
 };
+
+const notify = (text, type='info') => {
+  const key = toastBackgrounds[type] ? type : 'info';
+  Toastify({
+    text,
+    duration: 2400,
+    gravity: 'top',
+    position: 'center',
+    className: `toast-theme toast-${key}`,
+    style: { background: toastBackgrounds[key] }
+  }).showToast();
+};
+
+function updateRollToggleUI(isRolling) {
+  const btn = $('btnRollToggle');
+  if (!btn) return;
+  const stateEl = btn.querySelector('.roll-state');
+  btn.classList.toggle('is-rolling', !!isRolling);
+  if (stateEl) stateEl.textContent = isRolling ? 'Pausa' : 'Play';
+  btn.setAttribute('aria-pressed', isRolling ? 'true' : 'false');
+}
+
+const countdownClasses = ['countdown-idle', 'countdown-safe', 'countdown-warning', 'countdown-danger'];
+
+function updateCountdownUI(phase, countdownSec) {
+  const el = $('countdown');
+  if (!el) return;
+
+  const safeNumber = (value) => {
+    const num = typeof value === 'number' ? value : Number.parseInt(value, 10);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  let display = '—';
+  let state = 'countdown-idle';
+
+  if (phase === 'COUNTDOWN') {
+    display = countdownSec ?? '—';
+    const sec = safeNumber(countdownSec);
+    if (sec !== null) {
+      if (sec >= 3) state = 'countdown-safe';
+      else if (sec === 2) state = 'countdown-warning';
+      else state = 'countdown-danger';
+    }
+  } else if (phase === 'ARMED') {
+    display = '3';
+    state = 'countdown-safe';
+  }
+
+  el.textContent = display;
+  el.classList.remove(...countdownClasses);
+  if (state) el.classList.add(state);
+function renderEmptyState(listEl, message) {
+  if (!listEl) return;
+  const li = document.createElement('li');
+  li.classList.add('empty-state');
+  li.textContent = message;
+  listEl.appendChild(li);
+}
 
 function setStoredHostToken(token) {
   storedHostToken = token || null;
@@ -113,18 +172,33 @@ function getHostToken() {
 
 /* ===== RENDER LATO PARTECIPANTI ===== */
 function renderParticipantsManage(s){
-  const ul = $('manageList'); ul.innerHTML = '';
+  const ul = $('manageList');
+  if (!ul) return;
+  ul.innerHTML = '';
+  const total = s.participants.length;
+  const countEl = $('participantsCount');
+  if (countEl) {
+    countEl.textContent = total;
+    countEl.setAttribute('aria-label', `Totale partecipanti: ${total}`);
+  }
+  if (!total) {
+    renderEmptyState(ul, 'Nessun partecipante registrato al momento.');
+    return;
+  }
   for (const p of s.participants){
     const li = document.createElement('li');
-    li.innerHTML = `<span class="fs-5">${p.name}</span>
+    li.innerHTML = `
       <div class="delete-manager">
+        <span class="fs-5">${p.name}</span>
+      </div>
+      <div class="list-actions">
         ${youAreHost ? `<button class="btn btn-outline btn-kick" data-id="${p.id}"><i class="bi bi-x-octagon fw-bold fs-3"></i></button>` : ''}
         <strong class="fs-5">${p.credits}</strong>
       </div>`;
     ul.appendChild(li);
   }
   if (youAreHost){
-    for (const b of document.querySelectorAll('.btn-kick')){
+    ul.querySelectorAll('.btn-kick').forEach((b)=>{
       b.onclick = () => {
         const id = b.dataset.id;
         socket.emit('host:kick', { teamId: id }, (res)=>{
@@ -132,27 +206,41 @@ function renderParticipantsManage(s){
           else notify('Partecipante rimosso', 'success');
         });
       };
-    }
+    });
   }
 }
 
 function renderHistory(s){
-  const ul = $('historyList'); ul.innerHTML = '';
+  const ul = $('historyList');
+  if (!ul) return;
+  ul.innerHTML = '';
   const list = s.recentAssignments || [];
+  const total = list.length;
+  const countEl = $('historyCount');
+  if (countEl) {
+    countEl.textContent = total;
+    countEl.setAttribute('aria-label', `Totale aggiudicazioni registrate: ${total}`);
+  }
+  if (!total) {
+    renderEmptyState(ul, 'Nessuna aggiudicazione registrata.');
+    return;
+  }
   for (const h of list.slice().reverse()){ // più recenti in alto
     const li = document.createElement('li');
     const when = new Date(h.at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     li.innerHTML = `
-      <span>${h.playerName || '—'} <small>(${h.role || '—'})</small>
-        <span class="meta">a ${h.teamName} per ${h.price} • ${when}</span>
-      </span>
       <div>
+        <span>${h.playerName || '—'} <small>(${h.role || '—'})</small>
+          <span class="meta">a ${h.teamName} per ${h.price} • ${when}</span>
+        </span>
+      </div>
+      <div class="list-actions">
         ${youAreHost ? `<button class="btn btn-outline btn-undo" data-id="${h.id}">Elimina</button>` : ''}
       </div>`;
     ul.appendChild(li);
   }
   if (youAreHost){
-    for (const b of document.querySelectorAll('.btn-undo')){
+    ul.querySelectorAll('.btn-undo').forEach((b)=>{
       b.onclick = () => {
         const id = b.dataset.id;
         if (!confirm('Confermi l’eliminazione di questa aggiudicazione?')) return;
@@ -161,15 +249,32 @@ function renderHistory(s){
           else notify('Aggiudicazione eliminata', 'success');
         });
       };
-    }
+    });
   }
 }
 
 function renderAcquisitions(list){
-  const ul = $('acqList'); ul.innerHTML='';
-  for (const a of list){
+  const ul = $('acqList');
+  if (!ul) return;
+  ul.innerHTML='';
+  const items = Array.isArray(list) ? list : [];
+  const total = items.length;
+  const countEl = $('acqCount');
+  if (countEl) {
+    countEl.textContent = total;
+    countEl.setAttribute('aria-label', `Totale acquisti: ${total}`);
+  }
+  if (!total) {
+    renderEmptyState(ul, 'Non hai ancora effettuato acquisti.');
+    return;
+  }
+  for (const a of items){
     const li = document.createElement('li');
-    li.innerHTML = `<span>${a.player} <small>(${a.role})</small></span><strong>${a.price}</strong>`;
+    li.innerHTML = `
+      <div>
+        <span>${a.player} <small>(${a.role})</small></span>
+      </div>
+      <strong>${a.price}</strong>`;
     ul.appendChild(li);
   }
 }
@@ -228,7 +333,7 @@ function drawSlotWindow(current, prev, next){
 function resetSummaryUI(){
   $('sumBid').textContent = 0;
   $('sumLeader').textContent = '—';
-  $('countdown').textContent = '—';
+  updateCountdownUI('IDLE');
 }
 
 function applyRollMsUI(s){
@@ -286,6 +391,7 @@ function applyState(s){
 
   const duringAuction = ['RUNNING','ARMED','COUNTDOWN'].includes(s.phase);
   $('btnRollToggle').disabled = !youAreHost || duringAuction;
+  updateRollToggleUI(!!s.rolling);
 
   const filtersLockedMsg = 'Puoi cambiare filtri solo quando l’asta è ferma o dopo l’assegnazione.';
   const searchInput = $('searchPlayer');
@@ -310,9 +416,7 @@ function applyState(s){
   $('sumBid').textContent = s.topBid;
   $('sumLeader').textContent = s.leaderName || '—';
   $('sumCredits').textContent = s.youCredits ?? '—';
-  $('countdown').textContent =
-    (s.phase === 'COUNTDOWN' ? s.countdownSec :
-     (s.phase === 'ARMED' ? '3' : '—'));
+  updateCountdownUI(s.phase, s.countdownSec);
 
   renderParticipantsManage(s);
   renderHistory(s);
@@ -423,14 +527,8 @@ if (rollSel) {
 $('btnRollToggle')?.addEventListener('click', () => {
   socket.emit('host:toggleRoll', {}, (res)=> {
     if(res?.error) return notify(res.error, 'error');
-    const btn = $('btnRollToggle');
-    if (res.rolling) {
-      btn.textContent = '⏸'; // pausa
-      notify('Rullo in riproduzione', 'info');
-    } else {
-      btn.textContent = '▶'; // play
-      notify('Rullo in pausa', 'info');
-    }
+    updateRollToggleUI(!!res.rolling);
+    notify(res.rolling ? 'Rullo in riproduzione' : 'Rullo in pausa', 'info');
   });
 });
 
@@ -751,8 +849,7 @@ $('btnHostViewControls')?.addEventListener('click', ()=>{
     syncSearchVisibility(window.__last_state);
   }
 });
-
-
+}
 
 
 

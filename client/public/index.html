@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FantaBid 2.9</title>
   <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#0e0f12">
+  <meta name="theme-color" content="#1d4ed8">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
   <link rel="stylesheet" href="/styles.css?v=1">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -13,13 +13,12 @@
 </head>
 <body>
   <header class="topbar">
-  <div class="brand">FantAstaBuzz</div>
-  <button id="btnLogout" class="btn btn-outline btn-sm">Esci</button>
-  <button id="btnHostExitAndClose" class="btn btn-danger">
-  Chiudi asta
-</button>
-
-</header>
+    <div class="brand">FantAstaBuzz</div>
+    <div class="topbar-actions">
+      <button id="btnLogout" class="btn btn-outline btn-sm">Esci</button>
+      <button id="btnHostExitAndClose" class="btn btn-danger">Chiudi asta</button>
+    </div>
+  </header>
 
   <section id="screenLogin" class="screen">
     <div class="card card-lg intro">
@@ -70,53 +69,69 @@
 
   <!-- PARTECIPANTI (sempre visibile; se sei host compaiono i bottoni Rimuovi) -->
   <div class="card" id="participantsCard">
+    <header>
+      <h2 class="card-title">Partecipanti</h2>
+      <span class="card-meta" id="participantsCount" aria-live="polite">0</span>
+    </header>
     <details open>
-      <summary class="summary-title">Manager:</summary>
-      <ul id="manageList" class="list"></ul>
+      <summary class="summary-title">Elenco manager</summary>
+      <ul id="manageList" class="list mt-sm"></ul>
     </details>
   </div>
 
   <!-- AGGIUDICAZIONI RECENTI (sempre visibile; se sei host compaiono i bottoni Elimina) -->
   <div class="card" id="historyCard">
+    <header>
+      <h2 class="card-title">Aggiudicazioni</h2>
+      <span class="card-meta" id="historyCount" aria-live="polite">0</span>
+    </header>
     <details>
-      <summary class="summary-title">Aggiudicazioni recenti</summary>
-      <ul id="historyList" class="list"></ul>
+      <summary class="summary-title">Log recente</summary>
+      <ul id="historyList" class="list mt-sm"></ul>
     </details>
   </div>
 
   <!-- IMPORT / EXPORT (solo per host, nella vista "Controlli") -->
   <div class="card" id="importCard">
+    <header>
+      <h2 class="card-title">Import/Export</h2>
+    </header>
     <details open>
-      <summary class="summary-title">Import/Export</summary>
-
+      <summary class="summary-title">Importa liste</summary>
+      <div class="stack mt-sm">
+        <div class="row gap">
+          <button id="btnImportFile" class="btn btn-primary">Importa XLSX/CSV</button>
+          <input id="fileImport" type="file" accept=".xlsx,.csv" style="display:none" />
+        </div>
+        <p class="muted card-note">
+          Atteso Excel con colonne: <code>Nome</code>, <code>Fuori lista</code>, <code>Sq.</code>, <code>R.</code>, <code>FM</code>.
+          Le righe con <code>Fuori lista = *</code> vengono scartate. <code>R.</code> normalizzato in P/D/C/A. <code>FM</code> accetta la virgola.
+        </p>
+      </div>
+    </details>
+    <div class="card-divider" role="presentation"></div>
+    <footer>
       <div class="row gap">
-        <button id="btnImportFile" class="btn btn-outline">Importa XLSX/CSV</button>
-        <input id="fileImport" type="file" accept=".xlsx,.csv" style="display:none" />
-      </div>
-
-      <div class="muted" style="margin-top:.5rem">
-        Atteso Excel con colonne: <code>Nome</code>, <code>Fuori lista</code>, <code>Sq.</code>, <code>R.</code>, <code>FM</code>.
-        Le righe con <code>Fuori lista = *</code> vengono scartate. <code>R.</code> normalizzato in P/D/C/A. <code>FM</code> accetta la virgola.
-      </div>
-
-      <div class="row gap" style="margin-top:.75rem">
         <a class="btn btn-outline" href="/api/export/teams.csv" target="_blank" rel="noopener">Export squadre (CSV)</a>
         <a class="btn btn-outline" href="/api/export/history.csv" target="_blank" rel="noopener">Export aggiudicazioni (CSV)</a>
         <a class="btn btn-outline" href="/api/export/all.json" target="_blank" rel="noopener">Export completo (JSON)</a>
       </div>
-    </details>
-    <div class="row gap" style="margin-top:.5rem">
-      <a id="btnExportMy" class="btn btn-outline" href="#" target="_blank" rel="noopener">Export mia rosa (CSV)</a>
-      <a class="btn btn-outline" href="/api/export/remaining.csv" target="_blank" rel="noopener">Listone residuo (CSV)</a>
-    </div>
+      <div class="row gap mt-sm">
+        <a id="btnExportMy" class="btn btn-outline" href="#" target="_blank" rel="noopener">Export mia rosa (CSV)</a>
+        <a class="btn btn-outline" href="/api/export/remaining.csv" target="_blank" rel="noopener">Listone residuo (CSV)</a>
+      </div>
+    </footer>
   </div>
 </aside>
 
 
       <main class="col col-right col-main">
          <div id="rollControls" class="roll-controls" style="display:none">
-        <button id="btnRollToggle" class="btn">▶</button>
-        <select id="hostRollMs" class="btn">
+        <button id="btnRollToggle" class="btn" type="button" aria-pressed="false">
+          <span class="icon-play" aria-hidden="true"></span>
+          <span class="roll-state">Play</span>
+        </button>
+        <select id="hostRollMs" aria-label="Velocità rullo">
           <option value="2000">0.5x</option>
           <option value="1000" selected>1x</option>
           <option value="500">2x</option>
@@ -134,7 +149,7 @@
             <div class="summary-item"><div class="label">Leader</div><div class="value" id="sumLeader">—</div></div>
             <div class="summary-item"><div class="label">I tuoi crediti</div><div class="value" id="sumCredits">—</div></div>
             <div class="summary-item countdown-wrap" role="status" aria-live="polite" aria-atomic="true">
-            <div class="label">Countdown</div><div class="countdown" id="countdown">—</div>
+            <div class="label">Countdown</div><div class="countdown countdown-idle" id="countdown">—</div>
             </div>
           </div>
           <div id="bidsBox" class="bids">
@@ -150,9 +165,12 @@
           </div>
         </div>
 
-        <div class="card">
-          <h3>I tuoi acquisti</h3>
-          <ul id="acqList" class="list list-cards"></ul>
+        <div class="card" id="acqCard">
+          <header>
+            <h3 class="card-title">I tuoi acquisti</h3>
+            <span class="card-meta" id="acqCount" aria-live="polite">0</span>
+          </header>
+          <ul id="acqList" class="list list-cards mt-sm"></ul>
         </div>
       </main>
     </div>
