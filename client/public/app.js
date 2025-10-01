@@ -1,5 +1,7 @@
 let storedHostToken = null;
 
+/* ================= SESSION STORAGE ============= */
+/** Recupera un eventuale token host salvato localmente. */
 function bootstrapStoredHostToken() {
   let token = null;
   try {
@@ -8,6 +10,7 @@ function bootstrapStoredHostToken() {
   if (token) setStoredHostToken(token);
 }
 
+/** Memorizza il token host e lo sincronizza con l'oggetto socket. */
 function setStoredHostToken(token) {
   storedHostToken = token || null;
   try {
@@ -25,11 +28,13 @@ function setStoredHostToken(token) {
   }
 }
 
+/** Restituisce il token host attivo, se disponibile. */
 function getHostToken() {
   if (socket?.auth?.hostToken) return socket.auth.hostToken;
   return storedHostToken;
 }
 
+/** Garantisce la presenza di un clientId persistente per la sessione. */
 function ensureClientId() {
   let id = null;
   try {
@@ -45,6 +50,7 @@ function ensureClientId() {
   return id;
 }
 
+/* ================= SOCKET INITIALIZATION ======= */
 const socket = io({ autoConnect: false });
 socket.auth = socket.auth || {};
 
@@ -58,8 +64,9 @@ let registered = false;
 let youAreHost = false;
 let lastPlayerName = null;
 
+/* ================= SESSION RECOVERY ============ */
 // Tentativo di resume sessione da localStorage
-(function tryResume(){
+(function tryResume() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('teamSession') || 'null'); } catch(_){}
   if (!saved?.teamId || !saved?.key) return; // niente da fare
@@ -81,11 +88,12 @@ let lastPlayerName = null;
   });
 })();
 
+/* ================= HOST RECOVERY ============== */
 const initialHostToken = getHostToken();
 if (initialHostToken) {
-  socket.emit('host:reclaim', { token: initialHostToken }, (res)=>{
-    if(res?.ok) {
-      notify('Ruolo banditore ripristinato','info');
+  socket.emit('host:reclaim', { token: initialHostToken }, (res) => {
+    if (res?.ok) {
+      notify('Ruolo banditore ripristinato', 'info');
       youAreHost = true;
       __hostView = 'controls';
       if (window.__last_state) {
@@ -102,7 +110,8 @@ if (initialHostToken) {
 }
 
 
-(function prefillFromQuery(){
+/* ================= URL PREFILL ================ */
+(function prefillFromQuery() {
   try {
     const q = new URLSearchParams(location.search);
     const t = (q.get('team') || '').trim();
@@ -116,7 +125,9 @@ if (initialHostToken) {
 
 
 
-function $(id){ return document.getElementById(id); }
+/* ================= DOM UTILITIES =============== */
+/** Recupera un elemento per id dal DOM. */
+function $(id) { return document.getElementById(id); }
 
 const toastBackgrounds = {
   success: 'var(--toast-success)',
@@ -124,6 +135,8 @@ const toastBackgrounds = {
   info: 'var(--toast-info)'
 };
 
+/* ================= NOTIFICATIONS ============== */
+/** Mostra un toast informativo con stile coerente. */
 function notify(text, type = 'info') {
   const key = toastBackgrounds[type] ? type : 'info';
   Toastify({
@@ -136,6 +149,7 @@ function notify(text, type = 'info') {
   }).showToast();
 }
 
+/** Aggiorna il pulsante play/pause del rullo in base allo stato corrente. */
 function updateRollToggleUI(isRolling) {
   const btn = $('btnRollToggle');
   if (!btn) return;
@@ -147,6 +161,7 @@ function updateRollToggleUI(isRolling) {
 
 const countdownClasses = ['countdown-idle', 'countdown-safe', 'countdown-warning', 'countdown-danger'];
 
+/* ================= UI UPDATES ================== */
 function updateCountdownUI(phase, countdownSec) {
   const el = $('countdown');
   if (!el) return;
@@ -177,6 +192,8 @@ function updateCountdownUI(phase, countdownSec) {
   if (state) el.classList.add(state);
 }
 
+/* ================= RENDER FUNCTIONS ============ */
+/** Inserisce un placeholder nella lista specificata. */
 function renderEmptyState(listEl, message) {
   if (!listEl) return;
   const li = document.createElement('li');
@@ -185,8 +202,8 @@ function renderEmptyState(listEl, message) {
   listEl.appendChild(li);
 }
 
-/* ===== RENDER LATO PARTECIPANTI ===== */
-function renderParticipantsManage(s){
+/** Mostra l'elenco dei partecipanti lato banditore. */
+function renderParticipantsManage(s) {
   const ul = $('manageList');
   if (!ul) return;
   ul.innerHTML = '';
@@ -200,7 +217,7 @@ function renderParticipantsManage(s){
     renderEmptyState(ul, 'Nessun partecipante registrato al momento.');
     return;
   }
-  for (const p of s.participants){
+  for (const p of s.participants) {
     const li = document.createElement('li');
     li.innerHTML = `
       <div class="delete-manager">
@@ -212,12 +229,12 @@ function renderParticipantsManage(s){
       </div>`;
     ul.appendChild(li);
   }
-  if (youAreHost){
-    ul.querySelectorAll('.btn-kick').forEach((b)=>{
+  if (youAreHost) {
+    ul.querySelectorAll('.btn-kick').forEach((b) => {
       b.onclick = () => {
         const id = b.dataset.id;
-        socket.emit('host:kick', { teamId: id }, (res)=>{
-          if(res?.error) notify(res.error, 'error');
+        socket.emit('host:kick', { teamId: id }, (res) => {
+          if (res?.error) notify(res.error, 'error');
           else notify('Partecipante rimosso', 'success');
         });
       };
@@ -225,7 +242,8 @@ function renderParticipantsManage(s){
   }
 }
 
-function renderHistory(s){
+/** Rende lo storico delle aggiudicazioni più recenti. */
+function renderHistory(s) {
   const ul = $('historyList');
   if (!ul) return;
   ul.innerHTML = '';
@@ -240,7 +258,7 @@ function renderHistory(s){
     renderEmptyState(ul, 'Nessuna aggiudicazione registrata.');
     return;
   }
-  for (const h of list.slice().reverse()){ // più recenti in alto
+  for (const h of list.slice().reverse()) { // più recenti in alto
     const li = document.createElement('li');
     const when = new Date(h.at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     li.innerHTML = `
@@ -254,13 +272,13 @@ function renderHistory(s){
       </div>`;
     ul.appendChild(li);
   }
-  if (youAreHost){
-    ul.querySelectorAll('.btn-undo').forEach((b)=>{
+  if (youAreHost) {
+    ul.querySelectorAll('.btn-undo').forEach((b) => {
       b.onclick = () => {
         const id = b.dataset.id;
         if (!confirm('Confermi l’eliminazione di questa aggiudicazione?')) return;
-        socket.emit('host:undoPurchase', { historyId: id }, (res)=>{
-          if(res?.error) notify(res.error, 'error');
+        socket.emit('host:undoPurchase', { historyId: id }, (res) => {
+          if (res?.error) notify(res.error, 'error');
           else notify('Aggiudicazione eliminata', 'success');
         });
       };
@@ -268,10 +286,11 @@ function renderHistory(s){
   }
 }
 
-function renderAcquisitions(list){
+/** Visualizza gli acquisti della squadra corrente. */
+function renderAcquisitions(list) {
   const ul = $('acqList');
   if (!ul) return;
-  ul.innerHTML='';
+  ul.innerHTML = '';
   const items = Array.isArray(list) ? list : [];
   const total = items.length;
   const countEl = $('acqCount');
@@ -283,7 +302,7 @@ function renderAcquisitions(list){
     renderEmptyState(ul, 'Non hai ancora effettuato acquisti.');
     return;
   }
-  for (const a of items){
+  for (const a of items) {
     const li = document.createElement('li');
     li.innerHTML = `
       <div>
@@ -294,9 +313,11 @@ function renderAcquisitions(list){
   }
 }
 
-/* ===== SLOT ANIMATO ===== */
+/* ================= SLOT WINDOW ================= */
 let animating = false;
-function drawSlotWindow(current, prev, next){
+
+/** Disegna il rullo di estrazione dei giocatori con animazione leggera. */
+function drawSlotWindow(current, prev, next) {
   const inner = $('slotInner');
 
   const row = (p, cls) => {
@@ -314,7 +335,7 @@ function drawSlotWindow(current, prev, next){
   };
 
   // prima render senza animazione
-  if (!inner.dataset.ready){
+  if (!inner.dataset.ready) {
     inner.innerHTML = `
       <div class="slot-stack">
         ${row(prev, 'prev')}
@@ -339,21 +360,23 @@ function drawSlotWindow(current, prev, next){
   inner.innerHTML = '';
   inner.appendChild(stack);
 
-  requestAnimationFrame(()=> stack.classList.add('in'));
-  setTimeout(()=>{ animating = false; }, 380);
+  requestAnimationFrame(() => stack.classList.add('in'));
+  setTimeout(() => { animating = false; }, 380);
 }
 
 
 
-function resetSummaryUI(){
+/** Ripristina il riepilogo banditore allo stato neutro. */
+function resetSummaryUI() {
   $('sumBid').textContent = 0;
   $('sumLeader').textContent = '—';
   updateCountdownUI('IDLE');
 }
 
-function applyRollMsUI(s){
-  const sel  = $('hostRollMs');
-  const box  = $('rollControls');
+/** Gestisce la visibilità e il valore del controllo velocità rullo. */
+function applyRollMsUI(s) {
+  const sel = $('hostRollMs');
+  const box = $('rollControls');
   if (!sel || !box) return;
 
   const canShow = s.youAreHost;
@@ -363,10 +386,11 @@ function applyRollMsUI(s){
   if (s.rollMs && String(sel.value) !== String(s.rollMs)) {
     sel.value = String(s.rollMs);
   }
-   window.dispatchEvent(new Event('navbar:recheck'));
+  window.dispatchEvent(new Event('navbar:recheck'));
 }
 
-function applyHostPanels(s){
+/** Alterna la vista host tra controlli e riepilogo. */
+function applyHostPanels(s) {
   if (!s.youAreHost && __hostView !== 'summary') {
     __hostView = 'summary';
   }
@@ -394,8 +418,9 @@ function applyHostPanels(s){
    window.dispatchEvent(new Event('navbar:recheck'));
 }
 
-/* ===== APPLY STATE ===== */
-function applyState(s){
+/* ================= STATE APPLICATION ========== */
+/** Applica lo stato ricevuto dal server a tutti i pannelli UI. */
+function applyState(s) {
   window.__last_state = s;
 
   youAreHost = !!s.youAreHost;
@@ -750,8 +775,9 @@ $('btnHostBackN').onclick = () => {
   socket.emit('host:backN', { n }, (res)=> res?.error ? notify(res.error,'error') : notify(`Indietro di ${n}`,'info'));
 };
 
-/* ===== Utils per import lato client ===== */
-function normalizeRole(v){
+/* ================= CSV HELPERS ================ */
+/** Normalizza il ruolo estratto da CSV o XLSX in P/D/C/A. */
+function normalizeRole(v) {
   const s = String(v||'').trim().toUpperCase();
   if (!s) return '';
   if (['P','POR','PORTIERE','GK'].includes(s)) return 'P';
@@ -760,7 +786,8 @@ function normalizeRole(v){
   if (['A','ATT','ATTACCANTE','FW'].includes(s)) return 'A';
   return s[0];
 }
-function numIT(v){
+/** Converte un valore numerico italiano (con virgole) in numero JS. */
+function numIT(v) {
   if (v==null || v==='') return '';
   const n = Number(String(v).replace(',', '.').replace(/\s/g,''));
   return Number.isFinite(n) ? n : '';
@@ -774,7 +801,8 @@ $('searchPlayer')?.addEventListener('input', (e)=>{
 });
 
 // Solo host vede l’input
-function syncSearchVisibility(s){
+/** Mostra o nasconde il campo ricerca in base allo stato host. */
+function syncSearchVisibility(s) {
   const el = $('searchPlayer');
   if (!el) return;
   const canShow = s.youAreHost && __hostView === 'controls';
@@ -782,7 +810,8 @@ function syncSearchVisibility(s){
 }
 
 
-function logoutLocal(){
+/** Effettua il logout locale provando a comunicare l'uscita al server. */
+function logoutLocal() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('teamSession') || 'null'); } catch(_){}
 
@@ -844,7 +873,8 @@ const cardHistory = $('historyCard');
 let __hostView = 'summary'; // 'summary' | 'controls'
 
 
-function applyHostViewSwitch(s){
+/** Aggiorna la visibilità del selettore vista host. */
+function applyHostViewSwitch(s) {
   const sw = $('hostViewSwitch');
   if (sw) sw.style.display = s.youAreHost ? '' : 'none';
 }
@@ -867,6 +897,8 @@ $('btnHostViewControls')?.addEventListener('click', ()=>{
   }
 });
 
+/* ================= NAVBAR BEHAVIOUR =========== */
+/** Nasconde o mostra la navbar in base allo scroll e alla posizione. */
 (function setupNavbarFade() {
   const navbar = document.querySelector('.topbar');
   if (!navbar) return;

@@ -1,4 +1,5 @@
 // shared/events.js (o incollalo in alto ai file se non vuoi un modulo)
+/* ================= EVENT KEYS ================== */
 export const EVT = {
   HOST_TOGGLE: 'host:toggle',
   HOST_STOP_ROLL: 'host:stopRoll',

@@ -1,3 +1,4 @@
+/* ================= DEPENDENCIES ================ */
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -5,30 +6,36 @@ import { Server } from 'socket.io';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import {
-  rooms, makeRoom, snapshot, slugifyName, uniqueTeamId,
-  rebuildView, addBackToMaster, mkHistoryPending,
-  serialize, hydrate
+  rooms,
+  makeRoom,
+  snapshot,
+  slugifyName,
+  uniqueTeamId,
+  rebuildView,
+  addBackToMaster,
+  mkHistoryPending,
+  serialize,
+  hydrate,
 } from './state.js';
 import { saveRoomSnapshot, loadRoomSnapshot, writeBackupFile } from './storage.js';
 import { parseCSV, mapPlayers } from './csv.js';
-import crypto from 'crypto';
 
-//const ORIGIN = process.env.ORIGIN || true;
-//app.use(cors({ origin: ORIGIN }));
-//const io = new Server(server, { cors: { origin: ORIGIN } });
+/* ================= CONFIGURATION =============== */
+const HOST_PIN = process.env.HOST_PIN || '';
 
-const HOST_PIN = process.env.HOST_PIN || ''; // vuoto = disattivo
-
-// Config stanza (puoi spostarla dove preferisci)
 const ROOM_CFG = {
-  allowOverbid: false,            // hard mode di default
-  strictRules: false,             // se true blocca in offerta (non serve ora)
-  enableRosterBudget: false,      // <<< DISATTIVO di default
-  minRemainingCreditPerSlot: 0,   // irrilevante se enableRosterBudget=false
-  slots: { P:3, D:8, C:8, A:6 }
+  allowOverbid: false,
+  strictRules: false,
+  enableRosterBudget: false,
+  minRemainingCreditPerSlot: 0,
+  slots: { P: 3, D: 8, C: 8, A: 6 },
 };
 
+const ROOM_ID = 'DEFAULT';
+
+/* ================= APPLICATION SETUP =========== */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -36,26 +43,33 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-//const ORIGIN = process.env.ORIGIN || true;
-//app.use(cors({ origin: ORIGIN }));
-//const io = new Server(server, { cors: { origin: ORIGIN } });
-
 const STATIC_DIR = path.resolve(__dirname, '../../client/public');
-app.use('/', express.static(STATIC_DIR, {
-  setHeaders(res, filePath){ if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store'); }
-}));
+app.use(
+  '/',
+  express.static(STATIC_DIR, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store');
+    },
+  }),
+);
 
-const ROOM_ID = 'DEFAULT';
 if (!rooms.has(ROOM_ID)) makeRoom(ROOM_ID);
-rooms.get(ROOM_ID).config = ROOM_CFG; 
+rooms.get(ROOM_ID).config = ROOM_CFG;
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true } });
 
+/* ================= GENERAL HELPERS ============ */
+/** Restituisce il timestamp corrente in millisecondi. */
 const now = () => Date.now();
 
-function makeKey(){ return crypto.randomBytes(16).toString('hex'); }
+/** Genera una chiave casuale per sessioni e token di squadra. */
+function makeKey() {
+  return crypto.randomBytes(16).toString('hex');
+}
 
+/* ================= AUTH HELPERS =============== */
+/** Estrae il token host dagli header personalizzati o Bearer. */
 function extractHostToken(req) {
   let headerToken = req.headers['x-host-token'];
   if (Array.isArray(headerToken)) headerToken = headerToken[0];
@@ -72,6 +86,7 @@ function extractHostToken(req) {
   return null;
 }
 
+/** Middleware che valida il token host per le API riservate. */
 function requireHostAuth(req, res, next) {
   const room = rooms.get(ROOM_ID);
   if (!room || !room.hostToken) {
@@ -85,10 +100,12 @@ function requireHostAuth(req, res, next) {
   next();
 }
 
+/* ================= RATE LIMIT ================= */
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 10;
 const rateLimitBuckets = new Map();
 
+/** Limita il numero di richieste di import per IP in una finestra temporale. */
 function importRateLimit(req, res, next) {
   const nowTs = now();
   const ip = req.ip || req.connection?.remoteAddress || 'unknown';
@@ -104,13 +121,16 @@ function importRateLimit(req, res, next) {
   next();
 }
 
+/** Genera e registra un nuovo token host per la stanza. */
 function issueHostToken(room) {
   const token = crypto.randomBytes(16).toString('hex');
   room.hostToken = token;
   return token;
 }
 
-function broadcast(room){
+/* ================= ROOM SYNC =================== */
+/** Invia lo stato aggiornato a tutti i socket connessi alla stanza. */
+function broadcast(room) {
   for (const [, s] of io.of('/').sockets) {
     const data = s.data || {};
     if ((data.roomId || ROOM_ID) === room.id) {
@@ -119,6 +139,7 @@ function broadcast(room){
   }
 }
 
+/** Aggiorna la fase dell'asta e azzera i campi coerenti con il nuovo stato. */
 function transitionPhase(room, nextPhase) {
   if (!room) return;
   if (room.phase === nextPhase) return;
@@ -163,6 +184,8 @@ function transitionPhase(room, nextPhase) {
   broadcast(room);
 }
 
+/* ================= PERSISTENCE HELPERS ========= */
+/** Serializza e salva lo stato della stanza, gestendo eventuali errori. */
 function persistRoom(room) {
   if (!room) return null;
   try {
@@ -175,30 +198,37 @@ function persistRoom(room) {
   }
 }
 
-function setArmed(room){
+/** Porta rapidamente la stanza nella fase ARMATA. */
+function setArmed(room) {
   transitionPhase(room, 'ARMED');
 }
-function setCountdown(room){
+
+/** Porta rapidamente la stanza nella fase COUNTDOWN. */
+function setCountdown(room) {
   transitionPhase(room, 'COUNTDOWN');
 }
 
+/* ================= ROSTER HELPERS ============== */
+/** Conta il numero di giocatori per ruolo in una lista acquisizioni. */
 function countByRole(acquisitions = []) {
-  const c = { P:0, D:0, C:0, A:0 };
+  const c = { P: 0, D: 0, C: 0, A: 0 };
   for (const a of acquisitions) if (c[a.role] != null) c[a.role]++;
   return c;
 }
 
+/** Calcola gli slot residui per ciascun ruolo rispetto alla configurazione. */
 function remainingSlots(room, team) {
-  const tgt = room.config?.slots || { P:0, D:0, C:0, A:0 };
+  const tgt = room.config?.slots || { P: 0, D: 0, C: 0, A: 0 };
   const have = countByRole(team.acquisitions);
   return {
-    P: Math.max(0, (tgt.P||0) - (have.P||0)),
-    D: Math.max(0, (tgt.D||0) - (have.D||0)),
-    C: Math.max(0, (tgt.C||0) - (have.C||0)),
-    A: Math.max(0, (tgt.A||0) - (have.A||0)),
+    P: Math.max(0, (tgt.P || 0) - (have.P || 0)),
+    D: Math.max(0, (tgt.D || 0) - (have.D || 0)),
+    C: Math.max(0, (tgt.C || 0) - (have.C || 0)),
+    A: Math.max(0, (tgt.A || 0) - (have.A || 0)),
   };
 }
 
+/** Determina il budget minimo ancora necessario considerando gli slot residui. */
 function minBudgetStillNeeded(room, team, bidPrice) {
   const cfg = room.config || {};
   const teamAfter = (team.credits ?? 0) - (bidPrice || 0);
@@ -207,31 +237,29 @@ function minBudgetStillNeeded(room, team, bidPrice) {
   if (totalSlotsMissing <= 0) return 0;
   const minPerSlot = Math.max(0, Number(cfg.minRemainingCreditPerSlot || 0));
   const required = minPerSlot * totalSlotsMissing;
-  return required - teamAfter; // >0 significa "ti manca budget"
+  return required - teamAfter;
 }
 
+/** Applica i controlli di validità alle offerte effettuate dai team. */
 function validateBid(room, team, proposedPrice) {
   const cfg = room.config || {};
 
-  // 1) Controllo crediti hard
   const credits = Number(team?.credits ?? 0);
   if (!cfg.allowOverbid && proposedPrice > credits) {
     return { ok: false, error: 'Crediti insufficienti' };
   }
 
-  // 2) Regola rosa: applica SOLO se esplicitamente attiva e se ha senso
   if (!cfg.enableRosterBudget) return { ok: true };
 
   const tgt = cfg.slots || {};
   const have = countByRole(team?.acquisitions || []);
 
   const totalSlotsMissing =
-    Math.max(0, (tgt.P||0) - (have.P||0)) +
-    Math.max(0, (tgt.D||0) - (have.D||0)) +
-    Math.max(0, (tgt.C||0) - (have.C||0)) +
-    Math.max(0, (tgt.A||0) - (have.A||0));
+    Math.max(0, (tgt.P || 0) - (have.P || 0)) +
+    Math.max(0, (tgt.D || 0) - (have.D || 0)) +
+    Math.max(0, (tgt.C || 0) - (have.C || 0)) +
+    Math.max(0, (tgt.A || 0) - (have.A || 0));
 
-  // se non ho dati di rosa o non manca nulla, non rompiamo
   const hasAnyAcq = (team?.acquisitions?.length || 0) > 0;
   if (!totalSlotsMissing || !hasAnyAcq) return { ok: true };
 
@@ -250,6 +278,8 @@ function validateBid(room, team, proposedPrice) {
   return { ok: true };
 }
 
+/* ================= SALE MANAGEMENT ============ */
+/** Finalizza l'aggiudicazione pendente, aggiornando team e storico. */
 function finalizePendingSale(room) {
   if (!room) return { ok: false, error: 'Room non trovata' };
   if (room.phase !== 'SOLD') return { ok: false, code: 'NOOP', error: 'Nessuna aggiudicazione' };
@@ -298,6 +328,7 @@ function finalizePendingSale(room) {
   return { ok: true, teamId: team.id, price };
 }
 
+/** Rimuove dal listone il giocatore indicato dallo snapshot di storico. */
 function removeFromMasterBySnapshot(room, h) {
   if (!room || !h) return;
 
@@ -308,7 +339,7 @@ function removeFromMasterBySnapshot(room, h) {
 
   if (!name || !role) return;
 
-  const idx = room.players.findIndex(p => {
+  const idx = room.players.findIndex((p) => {
     if (!p) return false;
 
     const pn = String(p.name || '').trim().toLowerCase();
@@ -335,6 +366,7 @@ function removeFromMasterBySnapshot(room, h) {
   }
 }
 
+/** Memorizza l'errore verificatosi durante l'assegnazione automatica. */
 function recordAutoAssignError(room, result, source = 'auto') {
   const last = room.history[room.history.length - 1] || null;
   const fallbackTeamId = result?.teamId || last?.teamId || room.leader || null;
@@ -352,6 +384,7 @@ function recordAutoAssignError(room, result, source = 'auto') {
   };
 }
 
+/** Pianifica la finalizzazione automatica fuori dal loop del socket. */
 function scheduleAutoFinalize(room) {
   if (!room) return;
   if (room.__autoFinalizeScheduled) return;
@@ -377,15 +410,16 @@ function scheduleAutoFinalize(room) {
   });
 }
 
-/* ===== Re-hydration all'avvio ===== */
+/* ================= BOOTSTRAP ================== */
 try {
   const snap = loadRoomSnapshot(ROOM_ID);
   if (snap) hydrate(rooms.get(ROOM_ID), snap);
-} catch { /* pace */ }
+} catch {
+  /* silent restore failure */
+}
 
-/* ===== API: Import CSV listone =====
-  Body: { csv: "<testo csv>", map: { name: 'name', role: 'role' } }
-*/
+/* ================= IMPORT API ================= */
+// Body: { csv: "<testo csv>", map: { name: 'name', role: 'role' } }
 app.post('/api/listone/import', importRateLimit, requireHostAuth, (req, res) => {
   try{
     const room = req.room || rooms.get(ROOM_ID);
@@ -412,7 +446,7 @@ app.post('/api/listone/import', importRateLimit, requireHostAuth, (req, res) => 
 });
 
 
-/* ===== API Export ===== */
+/* ================= EXPORT API ================= */
 app.get('/api/export/teams.csv', (_req, res) => {
   const room = rooms.get(ROOM_ID);
   const rows = [['team','credits']].concat([...room.teams.values()].map(t => [t.name, t.credits]));
@@ -463,6 +497,7 @@ app.get('/api/invite', (req, res) => {
 });
 
 /* ===== COUNTDOWN ===== */
+/* ================= COUNTDOWN LOOP ============== */
 setInterval(() => {
   const room = rooms.get(ROOM_ID);
   if (!room) return;
@@ -494,15 +529,13 @@ setInterval(() => {
 }, 150);
 
 
-/* ===== RULLO ADATTIVO SU rollMs ===== */
+/* ================= ROLLING LOOP ================= */
 setInterval(() => {
   const room = rooms.get(ROOM_ID);
   if (!room) return;
 
-  // inizializza tick interno (non persistente)
   if (!room.__rollTickAt) room.__rollTickAt = now();
 
-  // gira solo in ROLLING
   if (room.rolling && room.phase === 'ROLLING' && room.viewPlayers.length > 0) {
     const ms = Math.max(300, Math.min(5000, Number(room.rollMs || 2000)));
     const t = now();
@@ -512,16 +545,20 @@ setInterval(() => {
       broadcast(room);
     }
   } else {
-    // se non sta girando, riallinea il tick per evitare scatti alla ripartenza
     room.__rollTickAt = now();
   }
 }, 120);
 
-io.on('connection', socket => {
+const FILTER_LOCKED_PHASES = ['RUNNING', 'ARMED', 'COUNTDOWN'];
+const FILTER_LOCKED_ERROR = 'Puoi cambiare filtri solo quando l’asta è ferma o dopo l’assegnazione.';
+
+/* ================= SOCKET HANDLERS ============ */
+io.on('connection', (socket) => {
   const room = rooms.get(ROOM_ID);
   const auth = socket.handshake?.auth || {};
   const claimedClientId = typeof auth.clientId === 'string' && auth.clientId ? auth.clientId : null;
   const claimedHostToken = typeof auth.hostToken === 'string' && auth.hostToken ? auth.hostToken : null;
+
   socket.data = socket.data || {};
   socket.data.clientId = claimedClientId || socket.data.clientId || null;
 
@@ -532,19 +569,21 @@ io.on('connection', socket => {
     socket.data.clientId = generatedId;
     socket.emit('session:clientId', { clientId: generatedId });
   }
+
   const liveSockets = io.of('/').sockets;
   if (room.hostOwner && !liveSockets.has(room.hostOwner)) {
     room.hostOwner = null;
   }
 
   let hostRecovered = false;
-  const canRecoverHost = !room.hostOwner
-    && room.hostOwnerClientId
-    && socket.data.clientId
-    && room.hostOwnerClientId === socket.data.clientId
-    && room.hostToken
-    && claimedHostToken
-    && claimedHostToken === room.hostToken;
+  const canRecoverHost =
+    !room.hostOwner &&
+    room.hostOwnerClientId &&
+    socket.data.clientId &&
+    room.hostOwnerClientId === socket.data.clientId &&
+    room.hostToken &&
+    claimedHostToken &&
+    claimedHostToken === room.hostToken;
 
   if (canRecoverHost) {
     room.hostOwner = socket.id;
@@ -556,139 +595,145 @@ io.on('connection', socket => {
   socket.emit('state', snapshot(room, null, socket.id));
   if (hostRecovered) broadcast(room);
 
-  /* REGISTRAZIONE */
-socket.on('team:register', ({ name, credits }, cb) => {
-  try {
-    if (!name) return cb && cb({ error: 'Nome squadra obbligatorio' });
-    const base = slugifyName(name);
-
-    // <<< BLOCCA NOMI GIÀ USATI >>>
-    for (const t of room.teams.values()) {
-      if (slugifyName(t.name) === base) {
-        return cb && cb({ error: 'Nome già registrato. Ricarica la pagina per riprendere la sessione.' });
+  /* ================= TEAM SESSION ============== */
+  // Gestisce registrazione e ripresa delle squadre
+  socket.on('team:register', ({ name, credits }, cb) => {
+    try {
+      if (!name) return cb && cb({ error: 'Nome squadra obbligatorio' });
+      const base = slugifyName(name);
+      for (const t of room.teams.values()) {
+        if (slugifyName(t.name) === base) {
+          return cb && cb({ error: 'Nome già registrato. Ricarica la pagina per riprendere la sessione.' });
+        }
       }
-    }
 
-    const tid = uniqueTeamId(room, base);
-    const team = {
-      id: tid,
-      name: String(name).trim(),
-      credits: Number(credits || 0),
-      acquisitions: [],
-      socketId: socket.id,
-      key: makeKey(),
-      sessionEpoch: room.sessionEpoch || 1
-    };
-    room.teams.set(tid, team);
-    socket.data.teamId = tid;
-    socket.data.displayName = team.name;
-    persistRoom(room);
-    broadcast(room);
-    cb && cb({ ok: true, teamId: tid, key: team.key });
-  } catch (e) {
-    cb && cb({ error: e?.message || 'Errore registrazione' });
-  }
-});
-
-
-/* RIPRESA SESSIONE dopo refresh: ricollega il socket a un team esistente */
-socket.on('team:resume', ({ teamId, key }, cb) => {
-  try {
-    if (!teamId || !key) return cb && cb({ error: 'Dati mancanti' });
-    const team = room.teams.get(teamId);
-    if (!team) return cb && cb({ error: 'Team non trovato' });
-    const currentEpoch = room.sessionEpoch || 1;
-    const teamEpoch = team.sessionEpoch || 1;
-    if (teamEpoch !== currentEpoch) {
-      return cb && cb({ error: 'Sessione scaduta' });
-    }
-    if (team.key && key !== team.key) return cb && cb({ error: 'Token non valido' });
-
-    const prevSocketId = team.socketId;
-    if (prevSocketId && prevSocketId !== socket.id) {
-      const prevSocket = io.of('/').sockets.get(prevSocketId);
-      if (prevSocket) {
-        prevSocket.emit('session:revoked');
-        try { prevSocket.disconnect(true); } catch (_) {}
-      }
-    }
-
-    // collega questo socket al team
-    socket.data.teamId = team.id;
-    socket.data.displayName = team.name;
-    team.socketId = socket.id;
-    team.key = makeKey();
-    team.sessionEpoch = currentEpoch;
-
-    persistRoom(room);
-    broadcast(room);
-    cb && cb({ ok:true, teamId: team.id, name: team.name, credits: team.credits, key: team.key });
-  } catch(e){
-    cb && cb({ error: e?.message || 'Errore resume' });
-  }
-});
-
-
-socket.on('host:toggle', ({ pin } = {}, cb) => {
-  if (room.hostOwner && !io.of('/').sockets.has(room.hostOwner)) {
-    room.hostOwner = null;
-  }
-  if (room.hostOwner && room.hostOwner !== socket.id) {
-    return cb && cb({ error: 'Banditore già assegnato' });
-  }
-  if (!room.hostOwner) {
-    if (HOST_PIN && pin !== HOST_PIN) return cb && cb({ error: 'PIN mancante o errato' });
-    room.hostOwner = socket.id;
-    if (socket.data?.clientId) room.hostOwnerClientId = socket.data.clientId;
-    if (room.phase === 'LOBBY') transitionPhase(room, 'ROLLING');
-    const token = issueHostToken(room);
-    const wasLobby = room.phase === 'LOBBY';
-    if (wasLobby) {
-      transitionPhase(room, 'ROLLING');
-    } else {
+      const tid = uniqueTeamId(room, base);
+      const team = {
+        id: tid,
+        name: String(name).trim(),
+        credits: Number(credits || 0),
+        acquisitions: [],
+        socketId: socket.id,
+        key: makeKey(),
+        sessionEpoch: room.sessionEpoch || 1,
+      };
+      room.teams.set(tid, team);
+      socket.data.teamId = tid;
+      socket.data.displayName = team.name;
       persistRoom(room);
       broadcast(room);
+      cb && cb({ ok: true, teamId: tid, key: team.key });
+    } catch (e) {
+      cb && cb({ error: e?.message || 'Errore registrazione' });
     }
-    return cb && cb({ ok:true, host:true, hostToken: token });  // <<< invia token
-  } else if (room.hostOwner === socket.id) {
-    room.hostOwner = null;
-    room.hostOwnerClientId = null;
-    room.hostToken = null;
+  });
+
+  socket.on('team:resume', ({ teamId, key }, cb) => {
+    try {
+      if (!teamId || !key) return cb && cb({ error: 'Dati mancanti' });
+      const team = room.teams.get(teamId);
+      if (!team) return cb && cb({ error: 'Team non trovato' });
+      const currentEpoch = room.sessionEpoch || 1;
+      const teamEpoch = team.sessionEpoch || 1;
+      if (teamEpoch !== currentEpoch) {
+        return cb && cb({ error: 'Sessione scaduta' });
+      }
+      if (team.key && key !== team.key) return cb && cb({ error: 'Token non valido' });
+
+      const prevSocketId = team.socketId;
+      if (prevSocketId && prevSocketId !== socket.id) {
+        const prevSocket = io.of('/').sockets.get(prevSocketId);
+        if (prevSocket) {
+          prevSocket.emit('session:revoked');
+          try {
+            prevSocket.disconnect(true);
+          } catch (_) {}
+        }
+      }
+
+      socket.data.teamId = team.id;
+      socket.data.displayName = team.name;
+      team.socketId = socket.id;
+      team.key = makeKey();
+      team.sessionEpoch = currentEpoch;
+
+      persistRoom(room);
+      broadcast(room);
+      cb && cb({ ok: true, teamId: team.id, name: team.name, credits: team.credits, key: team.key });
+    } catch (e) {
+      cb && cb({ error: e?.message || 'Errore resume' });
+    }
+  });
+
+  /* ================= HOST SESSION ============== */
+  // Consente di acquisire o rilasciare il ruolo di banditore
+  socket.on('host:toggle', ({ pin } = {}, cb) => {
+    if (room.hostOwner && !io.of('/').sockets.has(room.hostOwner)) {
+      room.hostOwner = null;
+    }
+    if (room.hostOwner && room.hostOwner !== socket.id) {
+      return cb && cb({ error: 'Banditore già assegnato' });
+    }
+    if (!room.hostOwner) {
+      if (HOST_PIN && pin !== HOST_PIN) return cb && cb({ error: 'PIN mancante o errato' });
+      room.hostOwner = socket.id;
+      if (socket.data?.clientId) room.hostOwnerClientId = socket.data.clientId;
+      if (room.phase === 'LOBBY') transitionPhase(room, 'ROLLING');
+      const token = issueHostToken(room);
+      const wasLobby = room.phase === 'LOBBY';
+      if (wasLobby) {
+        transitionPhase(room, 'ROLLING');
+      } else {
+        persistRoom(room);
+        broadcast(room);
+      }
+      return cb && cb({ ok: true, host: true, hostToken: token });
+    } else if (room.hostOwner === socket.id) {
+      room.hostOwner = null;
+      room.hostOwnerClientId = null;
+      room.hostToken = null;
+      persistRoom(room);
+      broadcast(room);
+      return cb && cb({ ok: true, host: false });
+    }
+  });
+
+  socket.on('host:reclaim', ({ token }, cb) => {
+    if (!token || token !== room.hostToken) return cb && cb({ error: 'Token host non valido' });
+    room.hostOwner = socket.id;
+    room.hostOwnerClientId = socket.data?.clientId ?? null;
     persistRoom(room);
     broadcast(room);
-    return cb && cb({ ok:true, host:false });
-  }
-});
+    cb && cb({ ok: true });
+  });
 
-const FILTER_LOCKED_PHASES = ['RUNNING','ARMED','COUNTDOWN'];
-const FILTER_LOCKED_ERROR = 'Puoi cambiare filtri solo quando l’asta è ferma o dopo l’assegnazione.';
+  /* ================= HOST FILTERS ============== */
+  // Gestione filtri e selezione casuale del listone
+  socket.on('host:setFilterName', ({ q }, cb) => {
+    if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (FILTER_LOCKED_PHASES.includes(room.phase)) {
+      return cb && cb({ error: FILTER_LOCKED_ERROR });
+    }
+    room.filterName = String(q || '');
+    rebuildView(room);
+    persistRoom(room);
+    broadcast(room);
+    cb && cb({ ok: true });
+  });
 
-socket.on('host:setFilterName', ({ q }, cb) => {
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  if (FILTER_LOCKED_PHASES.includes(room.phase)) {
-    return cb && cb({ error: FILTER_LOCKED_ERROR });
-  }
-  room.filterName = String(q || '');
-  rebuildView(room);
-  persistRoom(room);
-  broadcast(room);
-  cb && cb({ ok: true });
-});
-
-
-
-  /* FILTRO RUOLO E RANDOM */
   socket.on('host:setRoleFilter', ({ role }, cb) => {
     if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
     if (FILTER_LOCKED_PHASES.includes(room.phase)) {
       return cb && cb({ error: FILTER_LOCKED_ERROR });
     }
-    const allowed = ['ALL','P','D','C','A'];
+    const allowed = ['ALL', 'P', 'D', 'C', 'A'];
     const r = (role || 'ALL').toUpperCase();
     if (!allowed.includes(r)) return cb && cb({ error: 'Ruolo non valido' });
     room.filterRole = r;
     rebuildView(room);
-    if (room.viewPlayers.length === 0) { room.rolling = false; }
+    if (room.viewPlayers.length === 0) {
+      room.rolling = false;
+    }
     persistRoom(room);
     broadcast(room);
     cb && cb({ ok: true });
@@ -707,158 +752,191 @@ socket.on('host:setFilterName', ({ q }, cb) => {
     cb && cb({ ok: true, letter: usedStart || pick });
   });
 
-  /* PAUSA/PLAY RULLO */
- socket.on('host:toggleRoll', (_, cb) => {
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
-  if (!room.viewPlayers.length) return cb && cb({ error: 'Nessun giocatore da scorrere' });
+  /* ================= ROLL CONTROL ============== */
+  // Controlla il rullo automatico e la velocità di scorrimento
+  socket.on('host:toggleRoll', (_, cb) => {
+    if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (['RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
+    if (!room.viewPlayers.length) return cb && cb({ error: 'Nessun giocatore da scorrere' });
 
-  room.rolling = !room.rolling;
-  if (room.rolling) {
-    room.__rollTickAt = now();
-    transitionPhase(room, 'ROLLING');
-  }
-  persistRoom(room);
-  broadcast(room);
-  cb && cb({ ok: true, rolling: room.rolling });
-});
+    room.rolling = !room.rolling;
+    if (room.rolling) {
+      room.__rollTickAt = now();
+      transitionPhase(room, 'ROLLING');
+    }
+    persistRoom(room);
+    broadcast(room);
+    cb && cb({ ok: true, rolling: room.rolling });
+  });
 
+  socket.on('host:stopRoll', (_, cb) => {
+    const currentRoom = rooms.get(ROOM_ID);
+    if (currentRoom.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    currentRoom.rolling = false;
+    if (currentRoom.phase === 'ROLLING') transitionPhase(currentRoom, 'ROLLING');
+    persistRoom(currentRoom);
+    broadcast(currentRoom);
+    cb && cb({ ok: true });
+  });
 
-// reclaim su reload
-socket.on('host:reclaim', ({ token }, cb)=>{
-  if(!token || token !== room.hostToken) return cb && cb({ error:'Token host non valido' });
-  room.hostOwner = socket.id;
-  room.hostOwnerClientId = socket.data?.clientId ?? null;
-  persistRoom(room);
-  cb && cb({ ok:true });
-  broadcast(room);
-});
+  socket.on('host:setRollMs', ({ ms }, cb) => {
+    const currentRoom = rooms.get(ROOM_ID);
+    if (!currentRoom) return cb && cb({ error: 'Room non trovata' });
+    if (currentRoom.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    const v = Math.floor(Number(ms || 0));
+    if (!Number.isFinite(v) || v < 300 || v > 5000) return cb && cb({ error: 'Valore non valido (300–5000 ms)' });
+    currentRoom.rollMs = v;
+    persistRoom(currentRoom);
+    currentRoom.__rollTickAt = now();
+    broadcast(currentRoom);
+    cb && cb({ ok: true, rollMs: v });
+  });
 
-
-  /* OFFERTE: prima offerta in ROLLING avvia RUNNING e stoppa rullo. No auto-rialzo. */
-  function ensureAuctionStartedByBid(){
+  /* ================= BIDDING =================== */
+  // Gestisce offerte incrementali e libere
+  function ensureAuctionStartedByBid() {
     if (room.phase === 'ROLLING') {
       transitionPhase(room, 'RUNNING');
     }
   }
 
   const lastBidBySocket = new Map();
-function hitSpam(socketId){
-  const t = now(); const last = lastBidBySocket.get(socketId) || 0;
-  if (t - last < 120) return true;
-  lastBidBySocket.set(socketId, t);
-  return false;
-}
+  function hitSpam(socketId) {
+    const t = now();
+    const last = lastBidBySocket.get(socketId) || 0;
+    if (t - last < 120) return true;
+    lastBidBySocket.set(socketId, t);
+    return false;
+  }
 
-/* BID INCREMENTALE */
-socket.on('team:bid_inc', ({ amount }, cb) => {
-  const tid = socket.data.teamId;
-  if (!tid) return cb && cb({ error: 'Registrati prima' });
-  if (!['ROLLING','RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Asta non in corso' });
-  if (room.leader === tid && room.phase !== 'ROLLING') return cb && cb({ error: 'Sei già in testa' });
+  socket.on('team:bid_inc', ({ amount }, cb) => {
+    const tid = socket.data.teamId;
+    if (!tid) return cb && cb({ error: 'Registrati prima' });
+    if (!['ROLLING', 'RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Asta non in corso' });
+    if (room.leader === tid && room.phase !== 'ROLLING') return cb && cb({ error: 'Sei già in testa' });
 
-  const inc = Math.floor(Number(amount || 0));
-  if (inc <= 0) return cb && cb({ error: 'Importo non valido' });
+    const inc = Math.floor(Number(amount || 0));
+    if (inc <= 0) return cb && cb({ error: 'Importo non valido' });
+    if (hitSpam(socket.id)) return cb && cb({ ok: true });
 
-  if (hitSpam(socket.id)) return cb && cb({ ok: true }); // antispam
+    const team = room.teams.get(tid);
+    if (!team) return cb && cb({ error: 'Team non trovato' });
 
-  const team = room.teams.get(tid);
-  if (!team) return cb && cb({ error: 'Team non trovato' });
+    const proposed = room.topBid + inc;
+    const v = validateBid(room, team, proposed);
+    if (!v.ok) return cb && cb({ error: v.error });
 
-  const proposed = room.topBid + inc;
+    ensureAuctionStartedByBid();
 
-  // valida PRIMA di muovere la state machine
-  const v = validateBid(room, team, proposed);
-  if (!v.ok) return cb && cb({ error: v.error }); // rifiutata, l’asta prosegue col leader corrente
+    const nowTs = now();
+    const last = room.lastBuzzBy[tid] || 0;
+    if (nowTs - last < 80) return cb && cb({ ok: true });
 
-  // ora puoi “avviare” la fase gara se serve
-  ensureAuctionStartedByBid();
+    room.lastBuzzBy[tid] = nowTs;
+    room.topBid = proposed;
+    room.leader = tid;
+    setArmed(room);
+    cb && cb({ ok: true, topBid: room.topBid, warn: v.warn });
+  });
 
-  const nowTs = now();
-  const last = room.lastBuzzBy[tid] || 0;
-  if (nowTs - last < 80) return cb && cb({ ok: true });
+  socket.on('team:bid_free', ({ value }, cb) => {
+    const tid = socket.data.teamId;
+    if (!tid) return cb && cb({ error: 'Registrati prima' });
+    if (!['ROLLING', 'RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Asta non in corso' });
+    if (room.leader === tid && room.phase !== 'ROLLING') return cb && cb({ error: 'Sei già in testa' });
 
-  room.lastBuzzBy[tid] = nowTs;
-  room.topBid = proposed;
-  room.leader = tid;
-  setArmed(room);
-  cb && cb({ ok: true, topBid: room.topBid, warn: v.warn });
-});
+    const val = Math.floor(Number(value || 0));
+    if (!Number.isFinite(val) || val <= room.topBid) return cb && cb({ error: 'Offerta troppo bassa' });
+    if (hitSpam(socket.id)) return cb && cb({ ok: true });
 
+    const team = room.teams.get(tid);
+    if (!team) return cb && cb({ error: 'Team non trovato' });
 
-/* BID LIBERO */
-socket.on('team:bid_free', ({ value }, cb) => {
-  const tid = socket.data.teamId;
-  if (!tid) return cb && cb({ error: 'Registrati prima' });
-  if (!['ROLLING','RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Asta non in corso' });
-  if (room.leader === tid && room.phase !== 'ROLLING') return cb && cb({ error: 'Sei già in testa' });
+    const v = validateBid(room, team, val);
+    if (!v.ok) return cb && cb({ error: v.error });
 
-  const val = Math.floor(Number(value || 0));
-  if (!Number.isFinite(val) || val <= room.topBid) return cb && cb({ error: 'Offerta troppo bassa' });
+    ensureAuctionStartedByBid();
 
-  if (hitSpam(socket.id)) return cb && cb({ ok: true }); // antispam
+    room.topBid = val;
+    room.leader = tid;
+    setArmed(room);
+    cb && cb({ ok: true, topBid: room.topBid, warn: v.warn });
+  });
 
-  const team = room.teams.get(tid);
-  if (!team) return cb && cb({ error: 'Team non trovato' });
-
-  // valida PRIMA di muovere la state machine
-  const v = validateBid(room, team, val);
-  if (!v.ok) return cb && cb({ error: v.error }); // rifiutata, l’asta prosegue
-
-  // ok, ora avvia la gara se serve
-  ensureAuctionStartedByBid();
-
-  room.topBid = val;
-  room.leader = tid;
-  setArmed(room);
-  cb && cb({ ok: true, topBid: room.topBid, warn: v.warn });
-});
-
-
-
-  /* AUTO-ASSEGNAZIONE + RIMOZIONE DALLA LISTA + RESET RIEPILOGO */
+  /* ================= ASSIGNMENTS =============== */
+  // Gestisce auto assegnazioni e ripristini storico
   socket.on('winner:autoAssign', (_, cb) => {
-    const room = rooms.get(ROOM_ID);
-
-
-    const result = finalizePendingSale(room);
+    const currentRoom = rooms.get(ROOM_ID);
+    const result = finalizePendingSale(currentRoom);
     if (!result.ok) {
-      if (room.phase === 'SOLD' && result.code !== 'NOOP') {
-        recordAutoAssignError(room, result, 'manual');
-        broadcast(room);
+      if (currentRoom.phase === 'SOLD' && result.code !== 'NOOP') {
+        recordAutoAssignError(currentRoom, result, 'manual');
+        broadcast(currentRoom);
       }
       return cb && cb({ error: result.error });
     }
     cb && cb({ ok: true });
   });
 
-  /* KICK PARTECIPANTE (host only, non durante asta) */
-socket.on('host:kick', ({ teamId }, cb) => {
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Non puoi rimuovere durante l’asta' });
-  if (!teamId || !room.teams.has(teamId)) return cb && cb({ error: 'Team inesistente' });
+  socket.on('host:undoPurchase', ({ historyId }, cb) => {
+    const currentRoom = rooms.get(ROOM_ID);
+    if (currentRoom.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (['RUNNING', 'ARMED', 'COUNTDOWN'].includes(currentRoom.phase)) return cb && cb({ error: 'Non puoi fare UNDO durante l’asta' });
 
-  const t = room.teams.get(teamId);
-  // avvisa il socket del team (se è online)
-  if (t?.socketId) io.to(t.socketId).emit('you:kicked', { reason: 'Rimosso dal banditore' });
+    const idx = currentRoom.history.findIndex((h) => h.id === historyId);
+    if (idx < 0) return cb && cb({ error: 'Voce storico non trovata' });
 
-  // rimetti i giocatori presi nel listone, senza riaccredito
-  if (t && Array.isArray(t.acquisitions)) {
-    for (const a of t.acquisitions) addBackToMaster(room, { name: a.player, role: a.role });
-    t.acquisitions = [];
-  }
+    const h = currentRoom.history[idx];
+    if (!h.playerName || !h.role || !h.teamId) return cb && cb({ error: 'Voce incompleta' });
 
-  // se era leader, resetta
-  if (room.leader === teamId) { room.leader = null; room.topBid = 0; }
+    const team = currentRoom.teams.get(h.teamId);
+    if (team) team.credits += h.price || 0;
 
-  // elimina il team
-  room.teams.delete(teamId);
+    if (team && Array.isArray(team.acquisitions)) {
+      const pos = team.acquisitions.findIndex((a) => a.player === h.playerName && a.role === h.role && a.price === h.price);
+      if (pos >= 0) team.acquisitions.splice(pos, 1);
+    }
 
-  persistRoom(room);
-  broadcast(room);
-  cb && cb({ ok: true });
-});
+    addBackToMaster(currentRoom, { name: h.playerName, role: h.role, team: h.playerTeam, fm: h.playerFm });
 
+    currentRoom.history.splice(idx, 1);
+
+    if (!['RUNNING', 'ARMED', 'COUNTDOWN'].includes(currentRoom.phase)) {
+      currentRoom.topBid = 0;
+      currentRoom.leader = null;
+    }
+
+    persistRoom(currentRoom);
+    broadcast(currentRoom);
+    cb && cb({ ok: true });
+  });
+
+  /* ================= PARTICIPANT MGMT ========== */
+  // Kick, uscita e aggiornamento profilo squadre
+  socket.on('host:kick', ({ teamId }, cb) => {
+    if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (['RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Non puoi rimuovere durante l’asta' });
+    if (!teamId || !room.teams.has(teamId)) return cb && cb({ error: 'Team inesistente' });
+
+    const target = room.teams.get(teamId);
+    if (target?.socketId) io.to(target.socketId).emit('you:kicked', { reason: 'Rimosso dal banditore' });
+
+    if (target && Array.isArray(target.acquisitions)) {
+      for (const a of target.acquisitions) addBackToMaster(room, { name: a.player, role: a.role });
+      target.acquisitions = [];
+    }
+
+    if (room.leader === teamId) {
+      room.leader = null;
+      room.topBid = 0;
+    }
+
+    room.teams.delete(teamId);
+
+    persistRoom(room);
+    broadcast(room);
+    cb && cb({ ok: true });
+  });
 
   socket.on('disconnect', () => {
     if (room.hostOwner === socket.id) {
@@ -866,195 +944,134 @@ socket.on('host:kick', ({ teamId }, cb) => {
       broadcast(room);
     }
   });
- /* USCITA PARTECIPANTE: rimuove il team dalla stanza (solo fuori asta) */
-socket.on('team:leave', (_ , cb) => {
-  try {
-    const tid = socket.data.teamId;
-    if (!tid) return cb && cb({ error: 'Nessuna sessione attiva' });
 
-    // non consentire durante l’asta
-    if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) {
-      return cb && cb({ error: 'Non puoi uscire durante un’asta in corso' });
+  socket.on('team:leave', (_, cb) => {
+    try {
+      const tid = socket.data.teamId;
+      if (!tid) return cb && cb({ error: 'Nessuna sessione attiva' });
+      if (['RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) {
+        return cb && cb({ error: 'Non puoi uscire durante un’asta in corso' });
+      }
+
+      if (room.leader === tid) {
+        room.leader = null;
+        room.topBid = 0;
+      }
+
+      if (room.hostOwner === socket.id) {
+        room.hostOwner = null;
+        room.hostOwnerClientId = null;
+        room.hostToken = null;
+      }
+
+      room.teams.delete(tid);
+      socket.data.teamId = null;
+      socket.data.displayName = null;
+
+      persistRoom(room);
+      broadcast(room);
+      cb && cb({ ok: true });
+    } catch (e) {
+      cb && cb({ error: e?.message || 'Errore uscita' });
     }
+  });
 
-    // se era leader resetta eventuale topBid
-    if (room.leader === tid) { 
-      room.leader = null; 
-      room.topBid = 0; 
+  socket.on('team:updateProfile', ({ name, credits }, cb) => {
+    try {
+      const tid = socket.data.teamId;
+      if (!tid) return cb && cb({ error: 'Nessuna sessione attiva' });
+      const team = room.teams.get(tid);
+      if (!team) return cb && cb({ error: 'Team non trovato' });
+
+      if (typeof name === 'string' && name.trim()) {
+        const base = slugifyName(name);
+        for (const t of room.teams.values()) {
+          if (t.id !== tid && slugifyName(t.name) === base) {
+            return cb && cb({ error: 'Nome già usato da un altro team' });
+          }
+        }
+        team.name = name.trim();
+      }
+
+      if (credits != null) {
+        const c = Number(credits);
+        if (!Number.isFinite(c) || c < 0) return cb && cb({ error: 'Crediti non validi' });
+        team.credits = c;
+      }
+
+      persistRoom(room);
+      broadcast(room);
+      cb && cb({ ok: true, team: { id: team.id, name: team.name, credits: team.credits } });
+    } catch (e) {
+      cb && cb({ error: e?.message || 'Errore aggiornamento profilo' });
     }
+  });
 
-    // se era host, libera
-    if (room.hostOwner === socket.id) {
-      room.hostOwner = null;
-      room.hostOwnerClientId = null;
-      room.hostToken = null;
-    }
+  /* ================= HOST ACTIONS ============== */
+  // Reset asta e navigazione del listone
+  socket.on('host:exitAndClose', (_, cb) => {
+    const currentRoom = rooms.get(ROOM_ID);
+    if (!currentRoom) return cb && cb({ error: 'Room inesistente' });
+    if (currentRoom.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
 
-    // rimuovi team
-    room.teams.delete(tid);
+    currentRoom.sessionEpoch = (currentRoom.sessionEpoch || 1) + 1;
+    currentRoom.teams = new Map();
+    currentRoom.history = [];
 
-    // sgancia il socket
-    socket.data.teamId = null;
-    socket.data.displayName = null;
+    currentRoom.hostOwner = null;
+    currentRoom.hostOwnerClientId = null;
+    currentRoom.hostToken = null;
+    currentRoom.currentIndex = 0;
+    transitionPhase(currentRoom, 'LOBBY');
 
+    cb && cb({ ok: true });
+  });
+
+  socket.on('host:skip', (_, cb) => {
+    if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (!room.viewPlayers.length) return cb && cb({ error: 'Lista vuota' });
+    if (['RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
+    room.currentIndex = (room.currentIndex + 1) % room.viewPlayers.length;
+    persistRoom(room);
+    broadcast(room);
+    cb && cb({ ok: true, index: room.currentIndex });
+  });
+
+  socket.on('host:backN', ({ n }, cb) => {
+    if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    if (!room.viewPlayers.length) return cb && cb({ error: 'Lista vuota' });
+    if (['RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
+    const k = Math.max(1, Math.floor(Number(n || 1)));
+    const len = room.viewPlayers.length;
+    room.currentIndex = ((room.currentIndex - (k % len)) + len) % len;
+    persistRoom(room);
+    broadcast(room);
+    cb && cb({ ok: true, index: room.currentIndex });
+  });
+
+  socket.on('host:pinPlayer', ({ index }, cb) => {
+    if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+    const i = Math.floor(Number(index));
+    if (!Number.isFinite(i) || i < 0 || i >= room.viewPlayers.length) return cb && cb({ error: 'Indice non valido' });
+    if (['RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
+    room.currentIndex = i;
     persistRoom(room);
     broadcast(room);
     cb && cb({ ok: true });
-  } catch (e) {
-    cb && cb({ error: e?.message || 'Errore uscita' });
-  }
-});
-
-/* AGGIORNA PROFILO TEAM (nome/crediti) */
-socket.on('team:updateProfile', ({ name, credits }, cb) => {
-  try {
-    const tid = socket.data.teamId;
-    if (!tid) return cb && cb({ error: 'Nessuna sessione attiva' });
-    const team = room.teams.get(tid);
-    if (!team) return cb && cb({ error: 'Team non trovato' });
-
-    if (typeof name === 'string' && name.trim()) {
-      const base = slugifyName(name);
-      // blocca collisioni con altri team (lo stesso id può cambiare nome)
-      for (const t of room.teams.values()) {
-        if (t.id !== tid && slugifyName(t.name) === base) {
-          return cb && cb({ error: 'Nome già usato da un altro team' });
-        }
-      }
-      team.name = name.trim();
-    }
-
-    if (credits != null) {
-      const c = Number(credits);
-      if (!Number.isFinite(c) || c < 0) return cb && cb({ error: 'Crediti non validi' });
-      team.credits = c;
-    }
-
-    persistRoom(room);
-    broadcast(room);
-    cb && cb({ ok: true, team: { id: team.id, name: team.name, credits: team.credits } });
-  } catch (e) {
-    cb && cb({ error: e?.message || 'Errore aggiornamento profilo' });
-  }
-});
-
-socket.on('host:stopRoll', (_ , cb) => {
-  const room = rooms.get(ROOM_ID);
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  room.rolling = false;
-  if (room.phase === 'ROLLING') transitionPhase(room, 'ROLLING'); // resta in ROLLING ma fermo
-  persistRoom(room);
-  broadcast(room);
-  cb && cb({ ok:true });
-});
-
-socket.on('host:undoPurchase', ({ historyId }, cb) => {
-  const room = rooms.get(ROOM_ID);
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Non puoi fare UNDO durante l’asta' });
-
-  const idx = room.history.findIndex(h => h.id === historyId);
-  if (idx < 0) return cb && cb({ error: 'Voce storico non trovata' });
-
-  const h = room.history[idx];
-  if (!h.playerName || !h.role || !h.teamId) return cb && cb({ error: 'Voce incompleta' });
-
-  // 1) restituisci i crediti
-  const team = room.teams.get(h.teamId);
-  if (team) team.credits += (h.price || 0);
-
-  // 2) togli l’acquisto dalla rosa del team
-  if (team && Array.isArray(team.acquisitions)) {
-    const pos = team.acquisitions.findIndex(a => a.player === h.playerName && a.role === h.role && a.price === h.price);
-    if (pos >= 0) team.acquisitions.splice(pos, 1);
-  }
-
-  // 3) rimetti il giocatore nel master
-  addBackToMaster(room, { name: h.playerName, role: h.role, team: h.playerTeam, fm: h.playerFm });
-
-  // 4) rimuovi la voce di storico
-  room.history.splice(idx, 1);
-
-  // 5) reset eventuali riepiloghi asta ferma
-  if (!['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) {
-    room.topBid = 0; room.leader = null;
-  }
-
-  persistRoom(room);
-  broadcast(room);
-  cb && cb({ ok:true });
-});
-
-socket.on('host:exitAndClose', (_ , cb) => {
-  const room = rooms.get(ROOM_ID);
-  if (!room) return cb && cb({ error:'Room inesistente' });
-  if (room.hostOwner !== socket.id) return cb && cb({ error:'Non sei il banditore' });
-
-  // 1) nuova sessione
-  room.sessionEpoch = (room.sessionEpoch || 1) + 1;
-
-  // 2) pulizia partecipanti e aggiudicazioni
-  room.teams = new Map();      // se usi oggetto, fai {}
-  room.history = [];
-
-  // 3) reset banditore e stato gara
-  room.hostOwner = null;
-  room.hostOwnerClientId = null;
-  room.hostToken = null;
-  room.currentIndex = 0;       // opzionale: riparti dall’inizio del listone
-  transitionPhase(room, 'LOBBY');        // o 'ROLLING' se preferisci pre-roll pronto
-
-  cb && cb({ ok:true });
-});
-
-socket.on('host:skip', (_ , cb) => {
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  if (!room.viewPlayers.length) return cb && cb({ error: 'Lista vuota' });
-  if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
-  room.currentIndex = (room.currentIndex + 1) % room.viewPlayers.length;
-  persistRoom(room); broadcast(room);
-  cb && cb({ ok:true, index: room.currentIndex });
-});
-
-socket.on('host:backN', ({ n }, cb) => {
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  if (!room.viewPlayers.length) return cb && cb({ error: 'Lista vuota' });
-  if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
-  const k = Math.max(1, Math.floor(Number(n||1)));
-  const len = room.viewPlayers.length;
-  room.currentIndex = ( (room.currentIndex - (k % len)) + len ) % len;
-  persistRoom(room); broadcast(room);
-  cb && cb({ ok:true, index: room.currentIndex });
-});
-
-socket.on('host:pinPlayer', ({ index }, cb) => {
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  const i = Math.floor(Number(index));
-  if (!Number.isFinite(i) || i < 0 || i >= room.viewPlayers.length) return cb && cb({ error: 'Indice non valido' });
-  if (['RUNNING','ARMED','COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
-  room.currentIndex = i;
-  persistRoom(room); broadcast(room);
-  cb && cb({ ok:true });
-});
-
-socket.on('host:setRollMs', ({ ms }, cb) => {
-  const room = rooms.get(ROOM_ID);
-  if (!room) return cb && cb({ error: 'Room non trovata' });
-  if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
-  const v = Math.floor(Number(ms || 0));
-  if (!Number.isFinite(v) || v < 300 || v > 5000) return cb && cb({ error: 'Valore non valido (300–5000 ms)' });
-  room.rollMs = v;
-  persistRoom(room);
-  room.__rollTickAt = now();
-  broadcast(room);
-  cb && cb({ ok: true, rollMs: v });
-});
-
+  });
 });
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, '0.0.0.0', () => {
-  const nets = os.networkInterfaces(); const ips = [];
-  for (const name of Object.keys(nets)) for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
-  console.log(`FantaBid server on: http://localhost:${PORT}`); if (ips.length) console.log('LAN access:', ips.map(ip => `http://${ip}:${PORT}`).join('  '));
+  const nets = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
+    }
+  }
+  console.log(`FantaBid server on: http://localhost:${PORT}`);
+  if (ips.length) {
+    console.log('LAN access:', ips.map((ip) => `http://${ip}:${PORT}`).join('  '));
+  }
 });
