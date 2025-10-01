@@ -74,6 +74,16 @@ body {
   order: 1;
 
 }
+
+.topbar {
+  opacity: 1;
+}
+
+.topbar.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .topbar>.btn:first-of-type {
   margin-left: auto;
 }
@@ -82,6 +92,7 @@ body {
   flex: 1 1 150px;
 
 }
+
 .topbar>.btn+.btn {
   margin-left: 8px;
 }
@@ -822,9 +833,12 @@ summary:focus-visible {
 
 .summary {
   margin-top: 4px;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  display: flex;
+  gap: 15px;
+}
+
+.summary-item {
+  text-align: center;
 }
 
 .summary-item .label {
@@ -1176,4 +1190,3 @@ select.btn:focus-visible {
     grid-template-columns: 0.4fr 0.6fr;
   }
 }
-

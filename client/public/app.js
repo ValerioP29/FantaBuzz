@@ -1,4 +1,3 @@
-/* global Toastify, XLSX */
 let storedHostToken = null;
 
 function bootstrapStoredHostToken() {
@@ -364,6 +363,7 @@ function applyRollMsUI(s){
   if (s.rollMs && String(sel.value) !== String(s.rollMs)) {
     sel.value = String(s.rollMs);
   }
+   window.dispatchEvent(new Event('navbar:recheck'));
 }
 
 function applyHostPanels(s){
@@ -391,6 +391,7 @@ function applyHostPanels(s){
     btnControls.classList.toggle('active', isControlsView);
     btnControls.disabled = !s.youAreHost;
   }
+   window.dispatchEvent(new Event('navbar:recheck'));
 }
 
 /* ===== APPLY STATE ===== */
@@ -866,5 +867,78 @@ $('btnHostViewControls')?.addEventListener('click', ()=>{
   }
 });
 
+(function setupNavbarFade() {
+  const navbar = document.querySelector('.topbar');
+  if (!navbar) return;
 
+  let isHidden = false;
+  let ticking = false;
+  let debounceTimer = null;
+  const HIDE_THRESHOLD = 30; // Nascondi quando più vicino di 30px
+  const SHOW_THRESHOLD = 150; // Mostra quando più lontano di 150px
 
+  // Determina il punto di trigger in base al ruolo
+  function getTriggerElement() {
+    // Usa sempre historyCard che è più in alto
+    return document.getElementById('historyCard');
+  }
+
+  function updateNavbar() {
+    const triggerElement = getTriggerElement();
+    
+    if (!triggerElement) {
+      if (isHidden) {
+        navbar.classList.remove('hidden');
+        isHidden = false;
+      }
+      ticking = false;
+      return;
+    }
+
+    const navbarRect = navbar.getBoundingClientRect();
+    const triggerRect = triggerElement.getBoundingClientRect();
+
+    const navbarBottom = navbarRect.bottom;
+    const triggerTop = triggerRect.top;
+
+    // Distanza tra navbar bottom e trigger top
+    const distance = triggerTop - navbarBottom;
+
+    // Isteresi molto ampia con debounce
+    if (distance < HIDE_THRESHOLD && !isHidden) {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        navbar.classList.add('hidden');
+        isHidden = true;
+      }, 100);
+    } else if (distance > SHOW_THRESHOLD && isHidden) {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        navbar.classList.remove('hidden');
+        isHidden = false;
+      }, 100);
+    }
+
+    ticking = false;
+  }
+
+  function requestTick() {
+    if (!ticking) {
+      window.requestAnimationFrame(updateNavbar);
+      ticking = true;
+    }
+  }
+
+  // Event listener per scroll
+  window.addEventListener('scroll', requestTick, { passive: true });
+
+  // Re-check quando cambia lo stato (es. diventi banditore)
+  window.addEventListener('navbar:recheck', () => {
+    isHidden = false;
+    navbar.classList.remove('hidden');
+    setTimeout(updateNavbar, 100);
+  });
+
+  // Check iniziale
+  setTimeout(updateNavbar, 100);
+})();
