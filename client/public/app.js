@@ -906,6 +906,7 @@ $('btnHostViewControls')?.addEventListener('click', ()=>{
   let isHidden = false;
   let ticking = false;
   let debounceTimer = null;
+  let recheckTimer = null;
   const HIDE_THRESHOLD = 30; // Nascondi quando più vicino di 30px
   const SHOW_THRESHOLD = 150; // Mostra quando più lontano di 150px
 
@@ -966,9 +967,19 @@ $('btnHostViewControls')?.addEventListener('click', ()=>{
 
   // Re-check quando cambia lo stato (es. diventi banditore)
   window.addEventListener('navbar:recheck', () => {
-    isHidden = false;
-    navbar.classList.remove('hidden');
-    setTimeout(updateNavbar, 100);
+    // Non forzare la visibilità: durante i piccoli assestamenti di layout (es. rullo)
+    // la distanza reale potrebbe non essere cambiata abbastanza da richiedere il
+    // toggle. Limitandoci a programmare un nuovo calcolo evitiamo che la navbar
+    // venga mostrata per poi essere subito nascosta, eliminando il lampeggio.
+    clearTimeout(debounceTimer);
+    if (recheckTimer) {
+      clearTimeout(recheckTimer);
+    }
+    recheckTimer = setTimeout(() => {
+      ticking = false;
+      requestTick();
+      recheckTimer = null;
+    }, 100);
   });
 
   // Check iniziale
