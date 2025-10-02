@@ -358,7 +358,17 @@ function finalizePendingSale(room) {
     at: last.finalizedAt,
   };
 
-  return { ok: true, teamId: team.id, price, sale, warn };
+
+  const result = { ok: true, teamId: team.id, price, sale };
+
+  try {
+    const snap = serialize(room);
+    writeBackupFile(snap);
+  } catch (err) {
+    console.error('[finalizePendingSale] Errore durante la scrittura del backup:', err);
+  }
+
+  return result;
 }
 
 /** Rimuove dal listone il giocatore indicato dallo snapshot di storico. */
@@ -1031,6 +1041,12 @@ io.on('connection', (socket) => {
     }
 
     persistRoom(currentRoom);
+    try {
+      const snap = serialize(currentRoom);
+      writeBackupFile(snap);
+    } catch (err) {
+      console.error('[host:undoPurchase] Errore durante la scrittura del backup:', err);
+    }
     broadcast(currentRoom);
     cb && cb({ ok: true });
   });
