@@ -62,6 +62,7 @@ socket.connect();
 
 let registered = false;
 let youAreHost = false;
+let __hostView = 'summary'; // 'summary' | 'controls'
 let lastPlayerName = null;
 
 /* ================= SESSION RECOVERY ============ */
@@ -128,6 +129,10 @@ if (initialHostToken) {
 /* ================= DOM UTILITIES =============== */
 /** Recupera un elemento per id dal DOM. */
 function $(id) { return document.getElementById(id); }
+
+const manualAssignButton = $('btnAssignManual');
+const manualTeamSelect = $('assignTeamSelect');
+const manualPriceInput = $('assignPrice');
 
 const toastBackgrounds = {
   success: 'var(--toast-success)',
@@ -1008,9 +1013,6 @@ function syncSearchVisibility(s) {
 }
 
 const manualSection = $('manualAssignSection');
-const manualTeamSelect = $('assignTeamSelect');
-const manualPriceInput = $('assignPrice');
-const manualAssignButton = $('btnAssignManual');
 const manualPlayerSummary = $('assignPlayerSummary');
 
 function refreshManualAssignButton() {
@@ -1133,8 +1135,6 @@ const cardCtrl = $('ctrlCard');
 const cardImport = $('importCard');
 const cardParticipants = $('participantsCard');
 const cardHistory = $('historyCard');
-
-let __hostView = 'summary'; // 'summary' | 'controls'
 
 
 /** Aggiorna la visibilità del selettore vista host. */
