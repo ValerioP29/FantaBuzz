@@ -895,8 +895,32 @@ $('btnHostSkip').onclick = () =>
   socket.emit('host:skip', {}, (res)=> res?.error ? notify(res.error,'error') : notify('Avanti di uno','info'));
 
 $('btnHostBackN').onclick = () => {
-  const n = Number(prompt('Quanti indietro?', '1') || '1');
-  socket.emit('host:backN', { n }, (res)=> res?.error ? notify(res.error,'error') : notify(`Indietro di ${n}`,'info'));
+  const input = prompt('Quanti indietro?', '1');
+  if (input === null) return;
+
+  const parsed = Math.floor(Number(input));
+  if (!Number.isFinite(parsed)) {
+    notify('Inserisci un numero valido', 'warn');
+    return;
+  }
+
+  let effective = parsed;
+  if (effective < 1) {
+    effective = 1;
+    notify('Valore troppo basso, imposto a 1', 'warn');
+  } else if (effective > 10) {
+    effective = 10;
+    notify('Valore troppo alto, imposto a 10', 'warn');
+  }
+
+  socket.emit('host:backN', { n: effective }, (res = {}) => {
+    if (res.error) {
+      notify(res.error, 'error');
+      return;
+    }
+    const applied = Number.isFinite(res.applied) ? res.applied : effective;
+    notify(`Indietro di ${applied}`, 'info');
+  });
 };
 
 manualAssignButton?.addEventListener('click', () => {
