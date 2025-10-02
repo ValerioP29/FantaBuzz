@@ -57,6 +57,18 @@ function safeSplit(line, sep, expect) {
 /**
  * Converte le righe del CSV in oggetti giocatore normalizzati secondo la mappa di colonne.
  */
+const HDR = {
+  name: [/^nome$/i],
+  role: [/^r\.?$|^ruolo$/i],
+  team: [/^sq\.?$|^squadra$/i],
+  fm: [/^fm$|^fantamedia$/i],
+  out: [/^fuori\s*lista$|^fuorilista$/i],
+};
+
+function findAliasKey(keys, rxArr) {
+  return keys.find((key) => rxArr.some((rx) => rx.test(key))) || null;
+}
+
 export function mapPlayers(items, map) {
   const k = {
     name: map.name || 'name',
@@ -64,6 +76,32 @@ export function mapPlayers(items, map) {
     team: map.team || 'team',
     fm: map.fm || 'fm',
     out: map.out || 'fuori_lista',
+  };
+
+  const aliasCache = {};
+
+  const resolveField = (it, field, extraFallback = null) => {
+    const explicitKey = k[field];
+    if (explicitKey && Object.prototype.hasOwnProperty.call(it, explicitKey)) {
+      return it[explicitKey];
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(aliasCache, field)) {
+      const keys = Object.keys(it);
+      aliasCache[field] = HDR[field] ? findAliasKey(keys, HDR[field]) : null;
+    }
+    const aliasKey = aliasCache[field];
+    if (aliasKey && Object.prototype.hasOwnProperty.call(it, aliasKey)) {
+      return it[aliasKey];
+    }
+
+    if (extraFallback) {
+      for (const key of extraFallback) {
+        if (Object.prototype.hasOwnProperty.call(it, key)) return it[key];
+      }
+    }
+
+    return undefined;
   };
 
   const normRole = (v) => {
@@ -88,15 +126,13 @@ export function mapPlayers(items, map) {
   const out = [];
 
   for (const it of items) {
-    const outFlag = Object.prototype.hasOwnProperty.call(it, k.out)
-      ? it[k.out]
-      : it['Fuori lista'] ?? it['fuori_lista'] ?? '';
+    const outFlag = resolveField(it, 'out', ['Fuori lista', 'fuori_lista']) ?? '';
     if (isOut(outFlag)) continue;
 
-    const name = String(it[k.name] || '').trim();
-    const role = normRole(it[k.role]);
-    const team = String(it[k.team] || '').trim();
-    const fm = normFM(it[k.fm]);
+    const name = String(resolveField(it, 'name') || '').trim();
+    const role = normRole(resolveField(it, 'role'));
+    const team = String(resolveField(it, 'team') || '').trim();
+    const fm = normFM(resolveField(it, 'fm'));
 
     if (!name || !['P', 'D', 'C', 'A'].includes(role)) continue;
 
