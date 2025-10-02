@@ -296,6 +296,7 @@ function finalizePendingSale(room) {
   if (!room) return { ok: false, error: 'Room non trovata' };
   if (room.phase !== 'SOLD') return { ok: false, code: 'NOOP', error: 'Nessuna aggiudicazione' };
 
+  const cfg = room.config || {};
   const last = room.history[room.history.length - 1];
   if (!last) return { ok: false, code: 'NOOP', error: 'Nessuna aggiudicazione' };
   if (last.finalized) return { ok: false, code: 'NOOP', error: 'Già finalizzato' };
@@ -309,9 +310,15 @@ function finalizePendingSale(room) {
   const price = Number(last.price || 0) || 0;
   if (team.credits < price) return { ok: false, error: 'Crediti insufficienti', teamId: team.id };
 
-  if (room.config?.enableRosterBudget) {
+  let warn;
+  if (cfg.enableRosterBudget) {
     const debt = minBudgetStillNeeded(room, team, price);
-    if (debt > 0) return { ok: false, error: 'Regola rosa violata', teamId: team.id };
+    if (cfg.strictRules && debt > 0) {
+      return { ok: false, error: 'Regola rosa violata', teamId: team.id };
+    }
+    if (debt > 0) {
+      warn = 'Regola rosa violata (soft)';
+    }
   }
 
   const playerName = last.playerName && String(last.playerName).trim() ? last.playerName : '(??)';
@@ -350,6 +357,7 @@ function finalizePendingSale(room) {
     playerId: last.playerId,
     at: last.finalizedAt,
   };
+
 
   const result = { ok: true, teamId: team.id, price, sale };
 
@@ -916,7 +924,7 @@ io.on('connection', (socket) => {
       return cb && cb({ error: result.error });
     }
     if (result.sale) emitAuctionSold(currentRoom, result.sale, 'finalize');
-    cb && cb({ ok: true });
+    cb && cb({ ok: true, warn: result.warn });
   });
 
   socket.on('host:assignPlayer', ({ playerId, teamId, price }, cb) => {
@@ -1001,7 +1009,7 @@ io.on('connection', (socket) => {
     }
 
     if (result.sale) emitAuctionSold(currentRoom, result.sale, 'manual');
-    cb && cb({ ok: true });
+    cb && cb({ ok: true, warn: result.warn });
   });
 
   socket.on('host:undoPurchase', ({ historyId }, cb) => {
