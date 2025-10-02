@@ -531,6 +531,9 @@ function applyState(s) {
         if (res?.error && res.error !== 'Nessuna aggiudicazione') {
           notify(res.error, 'error');
         }
+        if (res?.warn) {
+          notify(res.warn, 'warn');
+        }
       });
     }
   } else {
@@ -872,6 +875,7 @@ manualAssignButton?.addEventListener('click', () => {
     if (res.error) {
       notify(res.error, 'error');
     } else {
+      if (res.warn) notify(res.warn, 'warn');
       if (manualPriceInput) manualPriceInput.value = '';
     }
     refreshManualAssignButton();
