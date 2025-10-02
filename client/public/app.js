@@ -132,21 +132,77 @@ function $(id) { return document.getElementById(id); }
 const toastBackgrounds = {
   success: 'var(--toast-success)',
   error: 'var(--toast-error)',
-  info: 'var(--toast-info)'
+  info: 'var(--toast-info)',
+  warn: 'var(--toast-warn)',
 };
 
+const TOAST_COALESCE_MS = 1500;
+const toastRegistry = new Map();
+
+function setupToastElement(toast, entry, message) {
+  setTimeout(() => {
+    const el = toast.toastElement;
+    if (!el) return;
+    el.classList.add('toast-with-counter');
+    el.innerHTML = '';
+    const msgEl = document.createElement('span');
+    msgEl.className = 'toast-message';
+    msgEl.textContent = message;
+    const countEl = document.createElement('span');
+    countEl.className = 'toast-count';
+    countEl.hidden = true;
+    el.appendChild(msgEl);
+    el.appendChild(countEl);
+    entry.countEl = countEl;
+  }, 0);
+}
+
 /* ================= NOTIFICATIONS ============== */
-/** Mostra un toast informativo con stile coerente. */
+/** Mostra un toast informativo con coalescenza dei duplicati ravvicinati. */
 function notify(text, type = 'info') {
+  const message = String(text ?? '').trim();
+  if (!message) return;
+
   const key = toastBackgrounds[type] ? type : 'info';
-  Toastify({
-    text,
-    duration: 2400,
+  const registryKey = `${key}::${message}`;
+  const now = Date.now();
+
+  const existing = toastRegistry.get(registryKey);
+  if (existing && now - existing.lastShown <= TOAST_COALESCE_MS) {
+    existing.lastShown = now;
+    existing.count += 1;
+    if (existing.countEl) {
+      existing.countEl.textContent = `×${existing.count}`;
+      existing.countEl.hidden = false;
+    }
+    return;
+  }
+
+  const toast = Toastify({
+    text: message,
+    duration: 3000,
     gravity: 'top',
     position: 'center',
     className: `toast-theme toast-${key}`,
-    style: { background: toastBackgrounds[key] }
-  }).showToast();
+    style: { background: toastBackgrounds[key] },
+    onClose() {
+      const current = toastRegistry.get(registryKey);
+      if (current && current.toast === toast) {
+        toastRegistry.delete(registryKey);
+      }
+    },
+  });
+
+  toast.showToast();
+
+  const entry = {
+    toast,
+    lastShown: now,
+    count: 1,
+    countEl: null,
+  };
+  toastRegistry.set(registryKey, entry);
+  setupToastElement(toast, entry, message);
 }
 
 /** Aggiorna il pulsante play/pause del rullo in base allo stato corrente. */
@@ -363,16 +419,6 @@ function drawSlotWindow(current, prev, next) {
   requestAnimationFrame(() => stack.classList.add('in'));
   setTimeout(() => { animating = false; }, 380);
 }
-
-
-
-/** Ripristina il riepilogo banditore allo stato neutro. */
-function resetSummaryUI() {
-  $('sumBid').textContent = 0;
-  $('sumLeader').textContent = '—';
-  updateCountdownUI('IDLE');
-}
-
 /** Gestisce la visibilità e il valore del controllo velocità rullo. */
 function applyRollMsUI(s) {
   const sel = $('hostRollMs');
@@ -415,7 +461,8 @@ function applyHostPanels(s) {
     btnControls.classList.toggle('active', isControlsView);
     btnControls.disabled = !s.youAreHost;
   }
-   window.dispatchEvent(new Event('navbar:recheck'));
+  updateManualAssignUI(s);
+  window.dispatchEvent(new Event('navbar:recheck'));
 }
 
 /* ================= STATE APPLICATION ========== */
@@ -424,7 +471,11 @@ function applyState(s) {
   window.__last_state = s;
 
   youAreHost = !!s.youAreHost;
-  $('hostStatus').textContent = youAreHost ? 'Banditore' : 'Partecipante';
+  const hostStatus = $('hostStatus');
+  if (hostStatus) {
+    hostStatus.textContent = 'Banditore attivo';
+    hostStatus.classList.toggle('hidden', !youAreHost);
+  }
 
   const hostLockedByOther = s.hostLockedBy && !youAreHost;
   $('btnHostToggle').disabled = hostLockedByOther;
@@ -466,6 +517,7 @@ function applyState(s) {
   applyHostPanels(s);
   applyRollMsUI(s);
   syncSearchVisibility(s);
+  updateManualAssignUI(s);
 
 
 
@@ -476,13 +528,8 @@ function applyState(s) {
     if (canHandle && !window.__soldHandled) {
       window.__soldHandled = true;
       socket.emit('winner:autoAssign', {}, (res)=>{
-        if (res?.error) {
-          const alreadyAssigned = (Array.isArray(s.acquisitions) && s.acquisitions.length > 0);
-          if (alreadyAssigned) notify('Giocatore assegnato', 'success');
-          else notify(res.error, 'error');
-        } else {
-          notify('Giocatore assegnato', 'success');
-          resetSummaryUI();
+        if (res?.error && res.error !== 'Nessuna aggiudicazione') {
+          notify(res.error, 'error');
         }
       });
     }
@@ -501,6 +548,15 @@ function applyState(s) {
 
 /* ===== Socket ===== */
 socket.on('state', applyState);
+socket.on('auction:sold', (payload = {}) => {
+  const name = payload.playerName || 'Giocatore';
+  const role = payload.role ? ` (${payload.role})` : '';
+  const teamName = payload.teamName || '—';
+  const priceValue = Number(payload.price);
+  const priceText = Number.isFinite(priceValue) ? priceValue : (payload.price ?? '—');
+  const prefix = payload.source === 'manual' ? 'Assegnazione manuale' : 'Aggiudicato';
+  notify(`${prefix}: ${name}${role} → ${teamName} per ${priceText}`, 'success');
+});
 
 /* ===== Login ===== */
 $('btnEnter').onclick = () => {
@@ -617,7 +673,7 @@ for (const b of document.querySelectorAll('.btn.inc')){
     const inc = Number(b.dataset.inc);
     socket.emit('team:bid_inc', { amount: inc }, (res)=>{
       if(res?.error) return notify(res.error, 'error');
-      if(res?.warn)  notify(res.warn, 'info');
+      if(res?.warn)  notify(res.warn, 'warn');
     });
     try{ navigator.vibrate?.(12); }catch(_){}
   };
@@ -628,7 +684,7 @@ $('btnFreeBid').onclick = ()=>{
   const val = Number(el.value || 0);
   socket.emit('team:bid_free', { value: val }, (res)=>{
     if(res?.error) return notify(res.error, 'error');
-    if(res?.warn)  notify(res.warn, 'info');
+    if(res?.warn)  notify(res.warn, 'warn');
     el.value = '';      // reset
     el.blur?.();        // togli focus
   });
@@ -775,6 +831,53 @@ $('btnHostBackN').onclick = () => {
   socket.emit('host:backN', { n }, (res)=> res?.error ? notify(res.error,'error') : notify(`Indietro di ${n}`,'info'));
 };
 
+manualAssignButton?.addEventListener('click', () => {
+  const state = window.__last_state;
+  if (!state?.youAreHost) {
+    notify('Non sei il banditore', 'error');
+    return;
+  }
+
+  const player = state.currentPlayer;
+  if (!player || !player.playerId) {
+    notify('Nessun giocatore in evidenza', 'warn');
+    return;
+  }
+
+  const teamId = manualTeamSelect?.value;
+  if (!teamId) {
+    notify('Seleziona una squadra', 'warn');
+    return;
+  }
+
+  const team = (state.participants || []).find((t) => t.id === teamId);
+  if (!team) {
+    notify('Squadra non valida', 'error');
+    return;
+  }
+
+  const priceValue = Number(manualPriceInput?.value || '');
+  if (!Number.isFinite(priceValue) || priceValue < 0) {
+    notify('Inserisci un prezzo valido', 'warn');
+    return;
+  }
+
+  const roleLabel = player.role ? ` (${player.role})` : '';
+  const summary = `${player.name || '—'}${roleLabel} → ${team.name} a ${priceValue}`;
+  if (!confirm(`Confermi l’assegnazione manuale?\n${summary}`)) return;
+  if (!confirm('Ultima conferma: procedere con l’assegnazione?')) return;
+
+  manualAssignButton.disabled = true;
+  socket.emit('host:assignPlayer', { playerId: player.playerId, teamId, price: priceValue }, (res = {}) => {
+    if (res.error) {
+      notify(res.error, 'error');
+    } else {
+      if (manualPriceInput) manualPriceInput.value = '';
+    }
+    refreshManualAssignButton();
+  });
+});
+
 /* ================= CSV HELPERS ================ */
 /** Normalizza il ruolo estratto da CSV o XLSX in P/D/C/A. */
 function normalizeRole(v) {
@@ -807,7 +910,75 @@ function syncSearchVisibility(s) {
   if (!el) return;
   const canShow = s.youAreHost && __hostView === 'controls';
   el.style.display = canShow ? '' : 'none';
+  const row = el.closest('.host-search-row');
+  if (row) row.style.display = canShow ? '' : 'none';
 }
+
+const manualSection = $('manualAssignSection');
+const manualTeamSelect = $('assignTeamSelect');
+const manualPriceInput = $('assignPrice');
+const manualAssignButton = $('btnAssignManual');
+const manualPlayerSummary = $('assignPlayerSummary');
+
+function refreshManualAssignButton() {
+  if (!manualAssignButton) return;
+  const state = window.__last_state || {};
+  const hasPlayer = !!(state.currentPlayer && state.currentPlayer.playerId);
+  const teamSelected = !!(manualTeamSelect && manualTeamSelect.value);
+  const priceStr = manualPriceInput ? manualPriceInput.value : '';
+  const priceNum = Number(priceStr);
+  const validPrice = priceStr !== '' && Number.isFinite(priceNum) && priceNum >= 0;
+  manualAssignButton.disabled = !(state.youAreHost && hasPlayer && teamSelected && validPrice);
+}
+
+function updateManualAssignUI(s) {
+  if (!manualSection) return;
+  const isVisible = s.youAreHost && __hostView === 'controls';
+  manualSection.style.display = isVisible ? '' : 'none';
+
+  if (!isVisible) {
+    refreshManualAssignButton();
+    return;
+  }
+
+  if (manualPlayerSummary) {
+    if (s.currentPlayer) {
+      const role = s.currentPlayer.role ? ` (${s.currentPlayer.role})` : '';
+      manualPlayerSummary.textContent = `${s.currentPlayer.name || '—'}${role}`;
+    } else {
+      manualPlayerSummary.textContent = 'Nessun giocatore in evidenza';
+    }
+  }
+
+  if (manualTeamSelect) {
+    const previous = manualTeamSelect.value;
+    const fragment = document.createDocumentFragment();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Seleziona squadra…';
+    fragment.appendChild(placeholder);
+
+    const allowedIds = new Set();
+    for (const team of s.participants || []) {
+      const opt = document.createElement('option');
+      opt.value = team.id;
+      opt.textContent = `${team.name} • Crediti: ${team.credits}`;
+      fragment.appendChild(opt);
+      allowedIds.add(team.id);
+    }
+
+    manualTeamSelect.innerHTML = '';
+    manualTeamSelect.appendChild(fragment);
+    if (previous && allowedIds.has(previous)) {
+      manualTeamSelect.value = previous;
+    }
+  }
+
+  refreshManualAssignButton();
+}
+
+manualTeamSelect?.addEventListener('change', refreshManualAssignButton);
+manualPriceInput?.addEventListener('input', refreshManualAssignButton);
 
 
 /** Effettua il logout locale provando a comunicare l'uscita al server. */

@@ -44,26 +44,42 @@
      <aside class="col col-left">
   <!-- CONTROLLI (solo per host, nella vista "Controlli") -->
   <div class="card" id="ctrlCard">
-    <div class="row space-between">
-      <h2 class="text-center">Controllo</h2>
-      <div class="chip" id="hostStatus">Partecipante</div>
+    <header class="host-card-header">
+      <h2>Controllo banditore</h2>
+      <div class="chip host-status hidden" id="hostStatus">Banditore attivo</div>
+    </header>
+
+    <div class="host-actions-grid" role="group" aria-label="Azioni banditore">
+      <button id="btnHostToggle" class="btn btn-outline host-action" title="Prendi o lascia il ruolo di banditore">Banditore</button>
+      <button id="btnHostSkip" class="btn btn-outline host-action" title="Salta al prossimo giocatore">Salta giocatore</button>
+      <button id="btnHostBackN" class="btn btn-outline host-action" title="Torna indietro di N posizioni">Indietro di N</button>
+      <button id="btnRandom" class="btn btn-outline host-action" title="Scegli una lettera casuale come partenza">Lettera casuale</button>
     </div>
 
-    <div class="row gap">
-      <button id="btnHostToggle" class="btn btn-outline">Banditore</button>
-      <div class="row gap">
-        <button id="btnHostSkip" class="btn btn-outline">Salta</button>
-        <button id="btnHostBackN" class="btn btn-outline">Indietro di N</button>
+    <div class="rolebar" id="rolebar" role="group" aria-label="Filtra per ruolo">
+      <button class="role btn" data-role="P" title="Mostra solo i portieri">P</button>
+      <button class="role btn" data-role="D" title="Mostra solo i difensori">D</button>
+      <button class="role btn" data-role="C" title="Mostra solo i centrocampisti">C</button>
+      <button class="role btn" data-role="A" title="Mostra solo gli attaccanti">A</button>
+    </div>
+
+    <div class="host-search-row">
+      <input id="searchPlayer" class="input" placeholder="Cerca giocatore..." aria-label="Cerca giocatore" />
+    </div>
+
+    <div class="manual-assign" id="manualAssignSection" style="display:none">
+      <div class="manual-assign-head">
+        <h3>Assegna manualmente</h3>
+        <p class="manual-assign-note">Seleziona squadra e crediti. Il sistema richiede doppia conferma prima di completare.</p>
       </div>
-    </div>
-
-    <div class="rolebar" id="rolebar">
-      <button class="role btn" data-role="P">P</button>
-      <button class="role btn" data-role="D">D</button>
-      <button class="role btn" data-role="C">C</button>
-      <button class="role btn" data-role="A">A</button>
-      <button id="btnRandom" class="btn btn-outline w-100">Random</button>
-      <input id="searchPlayer" class="input" placeholder="Cerca giocatore..." style="margin-left:.5rem; width: 14rem;" />
+      <div class="manual-assign-summary" id="assignPlayerSummary">Nessun giocatore in evidenza</div>
+      <div class="manual-assign-grid">
+        <select id="assignTeamSelect" class="input" aria-label="Seleziona squadra destinataria">
+          <option value="">Seleziona squadra…</option>
+        </select>
+        <input id="assignPrice" class="input" type="number" min="0" step="1" placeholder="Prezzo" aria-label="Prezzo di assegnazione" />
+        <button id="btnAssignManual" type="button" class="btn btn-primary" title="Assegna il giocatore corrente">Assegna</button>
+      </div>
     </div>
   </div>
 

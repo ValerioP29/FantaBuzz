@@ -18,6 +18,7 @@ import {
   mkHistoryPending,
   serialize,
   hydrate,
+  playerKey,
 } from './state.js';
 import { saveRoomSnapshot, loadRoomSnapshot, writeBackupFile } from './storage.js';
 import { parseCSV, mapPlayers } from './csv.js';
@@ -278,6 +279,17 @@ function validateBid(room, team, proposedPrice) {
   return { ok: true };
 }
 
+/** Invia ai client l'evento canonico di aggiudicazione completata. */
+function emitAuctionSold(room, payload, source = 'auto') {
+  if (!room || !payload) return;
+  const data = {
+    ...payload,
+    source,
+    emittedAt: Date.now(),
+  };
+  io.to(room.id || ROOM_ID).emit('auction:sold', data);
+}
+
 /* ================= SALE MANAGEMENT ============ */
 /** Finalizza l'aggiudicazione pendente, aggiornando team e storico. */
 function finalizePendingSale(room) {
@@ -311,6 +323,7 @@ function finalizePendingSale(room) {
   last.role = role;
   last.playerTeam = playerTeam;
   last.playerFm = playerFm;
+  last.playerId = last.playerId || playerKey({ name: playerName, role, team: playerTeam, fm: playerFm });
   last.teamId = team.id;
   last.teamName = team.name;
 
@@ -325,7 +338,20 @@ function finalizePendingSale(room) {
 
   transitionPhase(room, 'ROLLING');
 
-  return { ok: true, teamId: team.id, price };
+  const sale = {
+    historyId: last.id,
+    teamId: team.id,
+    teamName: team.name,
+    price,
+    playerName,
+    role,
+    playerTeam,
+    playerFm,
+    playerId: last.playerId,
+    at: last.finalizedAt,
+  };
+
+  return { ok: true, teamId: team.id, price, sale };
 }
 
 /** Rimuove dal listone il giocatore indicato dallo snapshot di storico. */
@@ -336,11 +362,14 @@ function removeFromMasterBySnapshot(room, h) {
   const role = String(h.role || '').trim();
   const team = String(h.playerTeam || '').trim().toLowerCase();
   const fm = h.playerFm ?? null;
+  const historyKey = h.playerId || playerKey({ name: h.playerName, role: h.role, team: h.playerTeam, fm: h.playerFm });
 
   if (!name || !role) return;
 
   const idx = room.players.findIndex((p) => {
     if (!p) return false;
+
+    if (historyKey && playerKey(p) === historyKey) return true;
 
     const pn = String(p.name || '').trim().toLowerCase();
     const pr = String(p.role || '').trim();
@@ -407,6 +436,8 @@ function scheduleAutoFinalize(room) {
       broadcast(room);
       return;
     }
+
+    if (result.sale) emitAuctionSold(room, result.sale, 'auto');
   });
 }
 
@@ -875,6 +906,92 @@ io.on('connection', (socket) => {
       }
       return cb && cb({ error: result.error });
     }
+    if (result.sale) emitAuctionSold(currentRoom, result.sale, 'finalize');
+    cb && cb({ ok: true });
+  });
+
+  socket.on('host:assignPlayer', ({ playerId, teamId, price }, cb) => {
+    const currentRoom = rooms.get(ROOM_ID);
+    if (currentRoom.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
+
+    if (!playerId || typeof playerId !== 'string') {
+      return cb && cb({ error: 'Giocatore non valido' });
+    }
+
+    if (!teamId || !currentRoom.teams.has(teamId)) {
+      return cb && cb({ error: 'Team non trovato' });
+    }
+
+    const phaseBlocked = ['RUNNING', 'ARMED', 'COUNTDOWN', 'SOLD'];
+    if (phaseBlocked.includes(currentRoom.phase)) {
+      return cb && cb({ error: 'Completa o interrompi l’asta prima di assegnare manualmente' });
+    }
+
+    const normalizedId = playerId.trim();
+    const playerIndex = currentRoom.players.findIndex((p) => normalizedId && playerKey(p) === normalizedId);
+    if (playerIndex < 0) {
+      return cb && cb({ error: 'Giocatore non presente nel listone' });
+    }
+
+    const player = currentRoom.players[playerIndex];
+    const team = currentRoom.teams.get(teamId);
+
+    const priceValue = Number(price);
+    if (!Number.isFinite(priceValue) || priceValue < 0) {
+      return cb && cb({ error: 'Prezzo non valido' });
+    }
+
+    const prevPhase = currentRoom.phase;
+    const prevLeader = currentRoom.leader;
+    const prevTopBid = currentRoom.topBid;
+    const prevDeadline = currentRoom.deadline;
+    const prevCountdown = currentRoom.countdownSec;
+    const prevRolling = currentRoom.rolling;
+
+    const entry = {
+      id:
+        typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : crypto.randomBytes(8).toString('hex'),
+      at: Date.now(),
+      sessionEpoch: currentRoom.sessionEpoch || 1,
+      teamId: team.id,
+      teamName: team.name,
+      price: priceValue,
+      playerName: player.name || '',
+      role: player.role || '',
+      playerTeam: player.team || '',
+      playerFm: player.fm ?? null,
+      playerId: playerKey(player),
+    };
+
+    currentRoom.history.push(entry);
+    currentRoom.leader = team.id;
+    currentRoom.topBid = priceValue;
+    currentRoom.phase = 'SOLD';
+    currentRoom.deadline = 0;
+    currentRoom.countdownSec = 0;
+    currentRoom.rolling = false;
+
+    let result;
+    try {
+      result = finalizePendingSale(currentRoom);
+    } catch (err) {
+      result = { ok: false, error: err?.message || 'Errore assegnazione' };
+    }
+
+    if (!result?.ok) {
+      currentRoom.history.pop();
+      currentRoom.phase = prevPhase;
+      currentRoom.leader = prevLeader;
+      currentRoom.topBid = prevTopBid;
+      currentRoom.deadline = prevDeadline;
+      currentRoom.countdownSec = prevCountdown;
+      currentRoom.rolling = prevRolling;
+      return cb && cb({ error: result?.error || 'Errore assegnazione' });
+    }
+
+    if (result.sale) emitAuctionSold(currentRoom, result.sale, 'manual');
     cb && cb({ ok: true });
   });
 
