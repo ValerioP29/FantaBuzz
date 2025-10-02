@@ -704,27 +704,84 @@ fileInput.onchange = async (e) => {
 
   try {
     let csvText = '';
+    let resolvedMap = null;
+
+    const HDR = {
+      name: [/^nome$/i],
+      role: [/^r\.?$|^ruolo$/i],
+      team: [/^sq\.?$|^squadra$/i],
+      fm:   [/^fm$|^fantamedia$/i],
+      out:  [/^fuori\s*lista$|^fuorilista$/i],
+    };
+    const matchHeaderIndex = (headerArr, rxArr) => {
+      const idx = headerArr.findIndex(h => rxArr.some((rx) => rx.test(h)));
+      return idx >= 0 ? idx : null;
+    };
+
+    const splitCsvLine = (line, sep) => {
+      const out = [];
+      let cur = '';
+      let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQ && line[i + 1] === '"') {
+            cur += '"';
+            i += 1;
+            continue;
+          }
+          inQ = !inQ;
+          continue;
+        }
+        if (!inQ && ch === sep) {
+          out.push(cur.trim());
+          cur = '';
+          continue;
+        }
+        cur += ch;
+      }
+      out.push(cur.trim());
+      return out;
+    };
+
+    const guessSep = (line) => {
+      if (line.includes(';')) return ';';
+      if (/\t/.test(line)) return String.fromCharCode(9);
+      return ',';
+    };
 
     if (file.name.toLowerCase().endsWith('.csv')) {
       // CSV diretto
       csvText = await file.text();
-        } else {
+
+      const normText = csvText.replace(/\r\n?/g, '\n');
+      const lines = normText.split('\n');
+      const headerLineRaw = lines.find((line) => line.trim() !== '');
+      if (!headerLineRaw) throw new Error('CSV vuoto o senza intestazioni riconoscibili.');
+      const headerLine = headerLineRaw.replace(/^\uFEFF/, '');
+      const sep = guessSep(headerLine);
+      const header = splitCsvLine(headerLine, sep).map((h) => h.trim());
+
+      const idx = {
+        name: matchHeaderIndex(header, HDR.name),
+        role: matchHeaderIndex(header, HDR.role),
+        team: matchHeaderIndex(header, HDR.team),
+        fm: matchHeaderIndex(header, HDR.fm),
+        out: matchHeaderIndex(header, HDR.out),
+      };
+
+      if (idx.name == null || idx.role == null) {
+        throw new Error('Intestazioni mancanti: servono almeno Nome e Ruolo/R.');
+      }
+
+      resolvedMap = {};
+      for (const [key, value] of Object.entries(idx)) {
+        if (value != null) resolvedMap[key] = header[value];
+      }
+    } else {
       // XLSX -> JSON -> normalizza -> CSV con alias header robusti
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type:'array' });
-
-      // Definizione alias header
-      const HDR = {
-        name: [/^nome$/i],
-        role: [/^r\.?$|^ruolo$/i],
-        team: [/^sq\.?$|^squadra$/i],
-        fm:   [/^fm$|^fantamedia$/i],
-        out:  [/^fuori\s*lista$|^fuorilista$/i],
-      };
-      const matchHeaderIndex = (headerArr, rxArr) => {
-        const idx = headerArr.findIndex(h => rxArr.some(rx => rx.test(h)));
-        return idx >= 0 ? idx : null;
-      };
 
       // trova il primo foglio che abbia "nome" e "ruolo/r."
       let sheet = null, headerRow = 0, header = null, idx = null;
@@ -801,12 +858,20 @@ fileInput.onchange = async (e) => {
     const headers = { 'Content-Type':'application/json' };
     const hostToken = getHostToken();
     if (hostToken) headers['x-host-token'] = hostToken;
+    const defaultMap = { name:'Nome', role:'Ruolo', team:'Squadra', fm:'FM', out:'Fuori lista' };
+    const effectiveMap = { ...defaultMap };
+    if (resolvedMap) {
+      for (const [key, value] of Object.entries(resolvedMap)) {
+        if (value) effectiveMap[key] = value;
+      }
+    }
+
     const res = await fetch('/api/listone/import', {
       method:'POST',
       headers,
       body: JSON.stringify({
         csv: csvText,
-        map: { name:'Nome', role:'Ruolo', team:'Squadra', fm:'FM', out:'Fuori lista' }
+        map: effectiveMap,
       })
     });
     const j = await res.json();
