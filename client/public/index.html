@@ -32,6 +32,40 @@
         <span class="knob"></span><span class="label">Dirigi l’asta</span>
       </label>
       <button id="btnEnter" class="btn btn-outline">Entra</button>
+      <!--
+        =============================================================
+        AUTENTICAZIONE UTENTI (COMMENTATA)
+        -------------------------------------------------------------
+        Per introdurre il login registrati, scommentare il markup qui
+        sotto e collegarlo alle funzioni presenti in app.js.
+        Istruzioni operative:
+        1. Aggiungere i campi email/password/displayName.
+        2. Mostrare/nascondere il form in base allo stato auth.
+        3. Inviare i dati con `signupUser`/`loginUser`.
+        4. Visualizzare lo stato corrente nell'`#authStatusBox` quando
+           l'utente è loggato.
+        Nota layout: idealmente questo blocco dovrebbe vivere in una card
+        separata (o tab dedicato) rispetto ai campi squadra, così le due
+        esperienze restano distinte.
+      =============================================================
+      <div class="auth-card mt-lg" id="authBox">
+        <h2 class="h5">Accedi con il tuo account</h2>
+        <div class="auth-stack gap-sm">
+          <label class="visually-hidden" for="authEmail">Email</label>
+          <input id="authEmail" type="email" class="input" placeholder="Email" autocomplete="email" />
+          <label class="visually-hidden" for="authPassword">Password</label>
+          <input id="authPassword" type="password" class="input" placeholder="Password" autocomplete="current-password" />
+        </div>
+        <div class="auth-row gap mt-sm">
+          <button id="btnLogin" class="btn btn-primary" type="button">Login</button>
+          <button id="btnSignup" class="btn btn-outline" type="button">Registrati</button>
+        </div>
+        <p class="muted mt-sm" id="authHint">L’account controlla solo il tuo profilo: la gestione squadre resta invariata.</p>
+      </div>
+      <div id="authStatusBox" class="auth-card mt-sm" hidden>
+        <!-- Quando attivo, mostrare qualcosa come: "Bentornato X" e bottone Logout -->
+      </div>
+      -->
     </div>
   </section>
 

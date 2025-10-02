@@ -1,5 +1,129 @@
 let storedHostToken = null;
 
+/*
+////////////////////////////////////////////////////////////////
+// FUTURA AUTENTICAZIONE UTENTI (COMMENTATA)
+// --------------------------------------------------------------
+// Questo blocco integra login/logout basati su API REST + JWT
+// senza alterare l'attuale login anonimo delle squadre.
+// Per abilitarlo:
+// 1. Scommentare tutte le funzioni qui sotto.
+// 2. Abilitare le route server corrispondenti (vedi server/src/index.js).
+// 3. Assicurarsi che le fetch includano `credentials: 'include'` se
+//    si decide di utilizzare i cookie HTTPOnly.
+////////////////////////////////////////////////////////////////
+// const authState = {
+//   user: null,
+//   token: null,
+//   loading: false,
+// };
+
+// function syncAuthButtonsDisabled() {
+//   const loginBtn = $('btnLogin');
+//   const signupBtn = $('btnSignup');
+//   if (loginBtn) loginBtn.disabled = !!authState.loading;
+//   if (signupBtn) signupBtn.disabled = !!authState.loading;
+// }
+//
+// async function authRequest(path, options = {}) {
+//   const res = await fetch(`/api/auth${path}`, {
+//     method: 'POST',
+//     headers: {
+//       'Content-Type': 'application/json',
+//       ...(authState.token ? { Authorization: `Bearer ${authState.token}` } : {}),
+//     },
+//     credentials: 'include',
+//     ...options,
+//   });
+//   const data = await res.json().catch((err) => {
+//     console.warn('[authRequest] risposta JSON non valida:', err?.message);
+//     return { ok: false, error: 'Risposta non valida dal server' };
+//   });
+//   if (!res.ok || !data?.ok) throw new Error(data?.error || 'Richiesta fallita');
+//   return data;
+// }
+//
+// async function signupUser({ email, password, displayName }) {
+//   authState.loading = true;
+//   syncAuthButtonsDisabled();
+//   try {
+//     const data = await authRequest('/signup', {
+//       body: JSON.stringify({ email, password, displayName }),
+//     });
+//     applyAuthSession(data);
+//     notify(`Benvenuto ${data.user.displayName}!`, 'success');
+//     return data;
+//   } finally {
+//     authState.loading = false;
+//     syncAuthButtonsDisabled();
+//   }
+// }
+//
+// async function loginUser({ email, password }) {
+//   authState.loading = true;
+//   syncAuthButtonsDisabled();
+//   try {
+//     const data = await authRequest('/login', {
+//       body: JSON.stringify({ email, password }),
+//     });
+//     applyAuthSession(data);
+//     notify(`Bentornato ${data.user.displayName}!`, 'success');
+//     return data;
+//   } finally {
+//     authState.loading = false;
+//     syncAuthButtonsDisabled();
+//   }
+// }
+//
+// async function logoutUser() {
+//   try {
+//     await authRequest('/logout', { method: 'POST', body: '{}' });
+//   } catch (err) {
+//     console.warn('logout fallito (ignora se offline):', err?.message);
+//   }
+//   // Se in futuro si opta per cookie HTTPOnly ricordarsi che il server
+//   // deve invalidare anche il cookie, non solo il token in memoria/localStorage.
+//   clearAuthSession();
+// }
+//
+// function applyAuthSession({ token, user }) {
+//   authState.user = user || null;
+//   authState.token = token || null;
+//   socket.auth = socket.auth || {};
+//   if (authState.token) {
+//     socket.auth.token = authState.token;
+//   } else if (socket?.auth?.token) {
+//     delete socket.auth.token;
+//   }
+//   try {
+//     localStorage.setItem('authUserSession', JSON.stringify({ token: authState.token, user: authState.user }));
+//   } catch (_) {}
+// }
+//
+// function clearAuthSession() {
+//   authState.user = null;
+//   authState.token = null;
+//   if (socket?.auth?.token) delete socket.auth.token;
+//   try { localStorage.removeItem('authUserSession'); } catch (_) {}
+// }
+//
+// function restoreAuthSession() {
+//   try {
+//     const raw = localStorage.getItem('authUserSession');
+//     if (!raw) return;
+//     const saved = JSON.parse(raw);
+//     if (saved?.token && saved?.user) {
+//       applyAuthSession(saved);
+//     }
+//   } catch (err) {
+//     console.warn('Impossibile ripristinare la sessione utente:', err?.message);
+//   }
+// }
+//
+// restoreAuthSession();
+////////////////////////////////////////////////////////////////
+*/
+
 /* ================= SESSION STORAGE ============= */
 /** Recupera un eventuale token host salvato localmente. */
 function bootstrapStoredHostToken() {
@@ -53,6 +177,18 @@ function ensureClientId() {
 /* ================= SOCKET INITIALIZATION ======= */
 const socket = io({ autoConnect: false });
 socket.auth = socket.auth || {};
+
+/*
+///////////////////////////////////////////////////////////////
+// HANDSHAKE CON TOKEN UTENTE (COMMENTATO)
+// -------------------------------------------------------------
+// Quando l'autenticazione verrà attivata, `restoreAuthSession()`
+// si occuperà di ripristinare sia lo stato UI sia `socket.auth.token`.
+// Se si desidera forzare una richiesta manuale prima del connect,
+// scommentare la chiamata diretta `restoreAuthSession();` appena
+// dopo l'inizializzazione dello `socket`.
+///////////////////////////////////////////////////////////////
+*/
 
 const clientId = ensureClientId();
 if (clientId) socket.auth.clientId = clientId;
@@ -1079,6 +1215,18 @@ function logoutLocal() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('teamSession') || 'null'); } catch(_){}
 
+  /*
+  ////////////////////////////////////////////////////////////////
+  // INTEGRAZIONE FUTURA CON LOGOUT UTENTE
+  // --------------------------------------------------------------
+  // Se l'autenticazione utenti è abilitata, richiamare
+  // `logoutUser()` qui per revocare anche la sessione JWT.
+  // Basta scommentare la riga seguente.
+  ////////////////////////////////////////////////////////////////
+  // if (typeof logoutUser === 'function') logoutUser();
+  ////////////////////////////////////////////////////////////////
+  */
+
   // se non c’è sessione salvata, fai solo cleanup
   if (!saved?.teamId || !saved?.key) {
     try { localStorage.removeItem('teamSession'); } catch(_){}
@@ -1117,6 +1265,45 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btn) {
      btn.onclick = logoutLocal;
   }
+  /*
+  ////////////////////////////////////////////////////////////////
+  // EVENTI FUTURI DI LOGIN/SIGNUP (COMMENTATI)
+  // --------------------------------------------------------------
+  // Una volta abilitate le API di autenticazione:
+  // const emailEl = $('authEmail');
+  // const passEl = $('authPassword');
+  // const loginBtn = $('btnLogin');
+  // const signupBtn = $('btnSignup');
+  // $('btnLogin')?.addEventListener('click', async () => {
+  //   try {
+  //     await loginUser({ email: emailEl.value, password: passEl.value });
+  //     $('authHint').textContent = 'Login effettuato! Ora registra o riprendi la tua squadra.';
+  //     emailEl.value = '';
+  //     passEl.value = '';
+  //   } catch (err) {
+  //     notify(err.message || 'Login fallito', 'error');
+  //   } finally {
+  //     syncAuthButtonsDisabled();
+  //   }
+  // });
+  // $('btnSignup')?.addEventListener('click', async () => {
+  //   try {
+  //     await signupUser({
+  //       email: emailEl.value,
+  //       password: passEl.value,
+  //       displayName: $('regName')?.value || emailEl.value,
+  //     });
+  //     $('authHint').textContent = 'Registrazione completata! Puoi ora partecipare come manager.';
+  //     emailEl.value = '';
+  //     passEl.value = '';
+  //   } catch (err) {
+  //     notify(err.message || 'Registrazione fallita', 'error');
+  //   } finally {
+  //     syncAuthButtonsDisabled();
+  //   }
+  // });
+  ////////////////////////////////////////////////////////////////
+  */
 })
 
 socket.on('you:kicked', ()=>{

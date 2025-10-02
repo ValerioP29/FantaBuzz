@@ -7,6 +7,28 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+/*
+////////////////////////////////////////////////////////////////
+// FUTURA AUTENTICAZIONE BASATA SU UTENTI REGISTRATI (COMMENTATA)
+// --------------------------------------------------------------
+// Per abilitare la registrazione/login con JWT:
+// 1. Installare le dipendenze: `npm install bcrypt jsonwebtoken cookie-parser`.
+// 2. Scommentare gli import qui sotto e nel resto del file.
+// 3. Impostare l'env JWT_SECRET con un valore sicuro.
+// 4. Scommentare i middleware e le route dedicate più in basso.
+// --------------------------------------------------------------
+// import bcrypt from 'bcrypt';
+// import jwt from 'jsonwebtoken';
+// import cookieParser from 'cookie-parser';
+// import {
+//   readUsers,
+//   writeUsers,
+//   touchUserSession,
+//   revokeUserSession,
+//   isSessionValid,
+// } from './storage.js';
+////////////////////////////////////////////////////////////////
+*/
 import {
   rooms,
   makeRoom,
@@ -26,6 +48,29 @@ import { parseCSV, mapPlayers } from './csv.js';
 /* ================= CONFIGURATION =============== */
 const HOST_PIN = process.env.HOST_PIN || '';
 
+/*
+///////////////////////////////////////////////////////////////
+// CONFIGURAZIONE JWT (COMMENTATA)
+// -------------------------------------------------------------
+// Per attivare le sessioni utente basate su token:
+// - Impostare la variabile d'ambiente JWT_SECRET con un valore robusto.
+// - Facoltativamente configurare JWT_EXPIRES_IN (es. '12h') e JWT_COOKIE_NAME.
+// - Scommentare il blocco sottostante insieme agli import necessari.
+// -------------------------------------------------------------
+// const JWT_SECRET = process.env.JWT_SECRET || 'sviluppo-cambia-questa-stringa';
+// const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '12h';
+// const JWT_COOKIE_NAME = process.env.JWT_COOKIE_NAME || 'fb_auth';
+// const JWT_COOKIE_OPTIONS = {
+//   httpOnly: true,
+//  secure: process.env.NODE_ENV === 'production',
+//   sameSite: 'lax',
+//   path: '/',
+// };
+// // Nota: se si imposta sia un cookie HTTPOnly sia l'header Authorization,
+// // il middleware preferirà l'header Bearer per evitare conflitti fra sessioni.
+///////////////////////////////////////////////////////////////
+*/
+
 const ROOM_CFG = {
   allowOverbid: false,
   strictRules: false,
@@ -43,6 +88,21 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
+/*
+// =============================================================
+// COOKIE & USER CONTEXT (COMMENTATI)
+// -------------------------------------------------------------
+// Per propagare automaticamente il token JWT via cookie HTTPOnly:
+// 1. Scommentare `app.use(cookieParser());` dopo aver installato il pacchetto.
+// 2. Scommentare il middleware `attachUserFromToken` definito più in basso.
+// 3. Assicurarsi che i client includano `credentials: 'include'` nelle fetch.
+// 4. In caso di token inviato sia via header sia via cookie, l'header Bearer
+//    avrà precedenza per rispettare la sessione scelta dall'utente.
+// -------------------------------------------------------------
+// app.use(cookieParser());
+// app.use(attachUserFromToken);
+// -------------------------------------------------------------
+*/
 
 const STATIC_DIR = path.resolve(__dirname, '../../client/public');
 app.use(
@@ -59,6 +119,42 @@ rooms.get(ROOM_ID).config = ROOM_CFG;
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true } });
+/*
+////////////////////////////////////////////////////////////////
+// SOCKET.IO AUTH UTENTI (COMMENTATA)
+// --------------------------------------------------------------
+// Per richiedere un JWT valido ai client socket:
+// - Scommentare il blocco sottostante.
+// - Assicurarsi che `attachUserFromToken` popoli req.user o che
+//   il client invii `auth: { token: '...' }` in fase di connect.
+// - Integrare eventuali controlli di ruolo/permessi nelle
+//   sezioni esistenti senza toccare la logica anonima.
+////////////////////////////////////////////////////////////////
+// io.use((socket, next) => {
+//   try {
+//     const rawToken = socket.handshake?.auth?.token || socket.handshake?.headers?.authorization;
+//     const token = typeof rawToken === 'string' ? rawToken.replace(/^Bearer\s+/i, '') : null;
+//     if (!token) {
+//       return next(new Error('Token mancante'));
+//     }
+//     const user = jwt.verify(token, JWT_SECRET);
+//     if (!isSessionValid(token)) {
+//       return next(new Error('Sessione revocata'));
+//     }
+//     touchUserSession(user.id, token, JWT_EXPIRES_IN);
+//     socket.data = socket.data || {};
+//     socket.data.user = user;
+//     socket.data.userToken = token;
+//     // In caso di ruoli nel payload (es. { role: 'admin' }), conservarli
+//     // in `socket.data.user` per abilitarne l'uso nei controlli futuri.
+//     return next();
+//   } catch (err) {
+//     console.warn('[socket auth] connessione rifiutata:', err?.message);
+//     return next(new Error('Autenticazione richiesta'));
+//   }
+// });
+////////////////////////////////////////////////////////////////
+*/
 
 /* ================= GENERAL HELPERS ============ */
 /** Restituisce il timestamp corrente in millisecondi. */
@@ -87,6 +183,61 @@ function extractHostToken(req) {
   return null;
 }
 
+/*
+////////////////////////////////////////////////////////////////
+// FUTURI HELPER UTENTI/JWT (COMMENTATI)
+// --------------------------------------------------------------
+// Il middleware e le utility sottostanti permettono di validare
+// le credenziali degli utenti registrati senza influenzare la
+// logica attuale basata su hostToken/clientId anonimo.
+// Per abilitarli scommentare l'intero blocco e gli import.
+////////////////////////////////////////////////////////////////
+// async function hashPassword(password) {
+//   const rounds = Number(process.env.BCRYPT_ROUNDS || 10);
+//   return bcrypt.hash(password, rounds);
+// }
+//
+// async function verifyPassword(password, hash) {
+//   if (!hash) return false;
+//   try {
+//     return await bcrypt.compare(password, hash);
+//   } catch (_) {
+//     return false;
+//   }
+// }
+//
+// function signJwt(payload, overrides = {}) {
+//   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN, ...overrides });
+// }
+//
+// function buildAuthResponse(user, token) {
+//   const safeUser = { id: user.id, email: user.email, displayName: user.displayName };
+//   return { ok: true, token, user: safeUser };
+// }
+//
+// function attachUserFromToken(req, res, next) {
+//   const bearer = extractBearerToken(req.headers.authorization);
+//   const raw = bearer || req.cookies?.[JWT_COOKIE_NAME];
+//   if (!raw) return next();
+//   try {
+//     const decoded = jwt.verify(raw, JWT_SECRET);
+//     req.user = decoded;
+//     req.authToken = raw;
+//   } catch (err) {
+//     console.warn('[attachUserFromToken] token non valido:', err?.message);
+//     return res.status(401).json({ ok: false, error: 'Token non valido' });
+//   }
+//   next();
+// }
+//
+// function extractBearerToken(header) {
+//   if (!header || typeof header !== 'string') return null;
+//   const match = header.match(/^Bearer\s+(.+)$/i);
+//   return match && match[1] ? match[1].trim() : null;
+// }
+////////////////////////////////////////////////////////////////
+*/
+
 /** Middleware che valida il token host per le API riservate. */
 function requireHostAuth(req, res, next) {
   const room = rooms.get(ROOM_ID);
@@ -100,6 +251,100 @@ function requireHostAuth(req, res, next) {
   req.room = room;
   next();
 }
+
+/*
+////////////////////////////////////////////////////////////////
+// API REST AUTENTICAZIONE (COMMENTATE)
+// --------------------------------------------------------------
+// Le route seguenti aggiungono signup/login/logout basate su JWT
+// mantenendo separata l'autorizzazione host. Sono pensate per
+// convivere con l'attuale gestione dei team anonimi.
+// Per abilitarle scommentare il blocco e assicurarsi che le
+// funzioni di storage utenti siano disponibili (vedi storage.js).
+////////////////////////////////////////////////////////////////
+// const authRouter = express.Router();
+//
+// authRouter.post('/signup', async (req, res) => {
+//   const { email, password, displayName } = req.body || {};
+//   if (!email || !password || !displayName) {
+//     return res.status(400).json({ ok: false, error: 'Dati obbligatori mancanti' });
+//   }
+//
+//   const normalizedEmail = String(email).trim().toLowerCase();
+//   if (!normalizedEmail.includes('@')) {
+//     return res.status(400).json({ ok: false, error: 'Email non valida' });
+//   }
+//   const users = await readUsers();
+//   if (users.some((u) => u.email === normalizedEmail)) {
+//     return res.status(409).json({ ok: false, error: 'Email già registrata' });
+//   }
+//
+//   const user = {
+//     id: crypto.randomUUID(),
+//     email: normalizedEmail,
+//     displayName: String(displayName).trim(),
+//     passwordHash: await hashPassword(password),
+//     createdAt: Date.now(),
+//   };
+//
+//   users.push(user);
+//   await writeUsers(users);
+//
+//   const token = signJwt({ id: user.id, email: user.email, displayName: user.displayName });
+//   touchUserSession(user.id, token, JWT_EXPIRES_IN);
+//
+//   if (req.headers['x-auth-use-cookie'] === '1') {
+//     res.cookie(JWT_COOKIE_NAME, token, JWT_COOKIE_OPTIONS);
+//     return res.status(201).json({ ok: true, user: { id: user.id, email: user.email, displayName: user.displayName } });
+//   }
+//
+//   res.status(201).json(buildAuthResponse(user, token));
+// });
+//
+// authRouter.post('/login', async (req, res) => {
+//   const { email, password } = req.body || {};
+//   if (!email || !password) {
+//     return res.status(400).json({ ok: false, error: 'Credenziali mancanti' });
+//   }
+//   const normalizedEmail = String(email).trim().toLowerCase();
+//   const users = await readUsers();
+//   const user = users.find((u) => u.email === normalizedEmail);
+//   if (!user) {
+//     return res.status(401).json({ ok: false, error: 'Credenziali errate' });
+//   }
+//   const valid = await verifyPassword(password, user.passwordHash);
+//   if (!valid) {
+//     return res.status(401).json({ ok: false, error: 'Credenziali errate' });
+//   }
+//
+//   const token = signJwt({ id: user.id, email: user.email, displayName: user.displayName });
+//   touchUserSession(user.id, token, JWT_EXPIRES_IN);
+//
+//   if (req.headers['x-auth-use-cookie'] === '1') {
+//     res.cookie(JWT_COOKIE_NAME, token, JWT_COOKIE_OPTIONS);
+//     return res.json({ ok: true, user: { id: user.id, email: user.email, displayName: user.displayName } });
+//   }
+//
+//   res.json(buildAuthResponse(user, token));
+// });
+//
+// authRouter.post('/logout', (req, res) => {
+//   const token = req.authToken || req.cookies?.[JWT_COOKIE_NAME] || extractBearerToken(req.headers.authorization);
+//   if (token) revokeUserSession(token);
+//   res.clearCookie(JWT_COOKIE_NAME, { ...JWT_COOKIE_OPTIONS, maxAge: 0 });
+//   res.json({ ok: true });
+// });
+//
+// authRouter.get('/me', (req, res) => {
+//   if (!req.user) return res.status(401).json({ ok: false, error: 'Non autenticato' });
+//   res.json({ ok: true, user: { id: req.user.id, email: req.user.email, displayName: req.user.displayName } });
+// });
+//
+// app.use('/api/auth', authRouter);
+// // Ricorda: `hostToken` resta un canale parallelo per i poteri del banditore
+// // e non coincide con eventuali ruoli applicativi presenti nel JWT utente.
+////////////////////////////////////////////////////////////////
+*/
 
 /* ================= RATE LIMIT ================= */
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -606,6 +851,21 @@ io.on('connection', (socket) => {
   const auth = socket.handshake?.auth || {};
   const claimedClientId = typeof auth.clientId === 'string' && auth.clientId ? auth.clientId : null;
   const claimedHostToken = typeof auth.hostToken === 'string' && auth.hostToken ? auth.hostToken : null;
+
+  /*
+  ////////////////////////////////////////////////////////////////
+  // UTILIZZO FUTURO DELL'UTENTE AUTENTICATO
+  // --------------------------------------------------------------
+  // Se si abilita il controllo JWT sul socket (vedi blocco io.use
+  // più in alto), qui è possibile utilizzare `socket.data.user`
+  // per personalizzare messaggi o permessi aggiuntivi senza
+  // intaccare l'attuale esperienza anonima.
+  // Esempio:
+  // if (socket.data?.user) {
+  //   console.debug('Utente connesso:', socket.data.user.email);
+  // }
+  ////////////////////////////////////////////////////////////////
+  */
 
   socket.data = socket.data || {};
   socket.data.clientId = claimedClientId || socket.data.clientId || null;
