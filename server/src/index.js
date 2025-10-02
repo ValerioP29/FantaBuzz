@@ -1181,12 +1181,15 @@ io.on('connection', (socket) => {
     if (room.hostOwner !== socket.id) return cb && cb({ error: 'Non sei il banditore' });
     if (!room.viewPlayers.length) return cb && cb({ error: 'Lista vuota' });
     if (['RUNNING', 'ARMED', 'COUNTDOWN'].includes(room.phase)) return cb && cb({ error: 'Ferma l’asta prima' });
-    const k = Math.max(1, Math.floor(Number(n || 1)));
+    const parsed = Math.floor(Number(n));
+    if (!Number.isFinite(parsed)) return cb && cb({ error: 'Valore non valido' });
+    const k = Math.max(1, Math.min(10, parsed));
+    if (parsed !== k) return cb && cb({ error: 'Puoi tornare indietro da 1 a 10 giocatori' });
     const len = room.viewPlayers.length;
     room.currentIndex = ((room.currentIndex - (k % len)) + len) % len;
     persistRoom(room);
     broadcast(room);
-    cb && cb({ ok: true, index: room.currentIndex });
+    cb && cb({ ok: true, index: room.currentIndex, applied: k });
   });
 
   socket.on('host:pinPlayer', ({ index }, cb) => {
