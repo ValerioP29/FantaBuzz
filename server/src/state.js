@@ -9,6 +9,33 @@ function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
+/**
+ * Genera una chiave deterministica per identificare univocamente un giocatore
+ * a partire dagli attributi principali (nome, ruolo, squadra, fm).
+ */
+export function playerKey(player) {
+  if (!player) return null;
+
+  const rawName =
+    player.name ?? player.playerName ?? player.player_name ?? player.nome ?? '';
+  const rawRole = player.role ?? player.ruolo ?? player.roleCode ?? '';
+  const rawTeam =
+    player.team ?? player.squadra ?? player.playerTeam ?? player.teamName ?? '';
+  const rawFm =
+    player.fm ?? player.playerFm ?? player.fantamedia ?? player.fmValue ?? null;
+
+  const name = String(rawName || '').trim().toLowerCase();
+  const role = String(rawRole || '').trim().toUpperCase();
+  if (!name || !role) return null;
+
+  const team = String(rawTeam || '').trim().toLowerCase();
+  const fmNumber = Number.parseFloat(rawFm);
+  const fm = Number.isFinite(fmNumber) ? fmNumber : null;
+
+  const fmPart = fm === null ? '' : fm.toString();
+  return `${name}#${role}#${team}#${fmPart}`;
+}
+
 /* ================= ROOM FACTORY ================ */
 /** Crea (o recupera) una stanza d'asta inizializzata con i valori di default. */
 export function makeRoom(id) {
@@ -189,6 +216,14 @@ export function snapshot(room, perspectiveTeamId = null, socketId = null) {
   const prev = n ? room.viewPlayers[(room.currentIndex - 1 + n) % n] : null;
   const next = n ? room.viewPlayers[(room.currentIndex + 1) % n] : null;
 
+  const withId = (player) =>
+    player
+      ? {
+          ...player,
+          playerId: playerKey(player),
+        }
+      : null;
+
   return {
     id: room.id,
     sessionEpoch: currentEpoch,
@@ -221,9 +256,9 @@ export function snapshot(room, perspectiveTeamId = null, socketId = null) {
     filterRole: room.filterRole,
     rolling: room.rolling,
 
-    currentPlayer: cur || null,
-    prevPlayer: prev || null,
-    nextPlayer: next || null,
+    currentPlayer: withId(cur),
+    prevPlayer: withId(prev),
+    nextPlayer: withId(next),
   };
 }
 
@@ -246,6 +281,7 @@ export function mkHistoryPending(room) {
     role: cur?.role || '',
     playerTeam: cur?.team || '',
     playerFm: cur?.fm ?? null,
+    playerId: cur ? playerKey(cur) : null,
   };
 
   room.history.push(entry);
