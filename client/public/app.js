@@ -1418,10 +1418,7 @@ $('btnHostViewControls')?.addEventListener('click', ()=>{
 
   // Re-check quando cambia lo stato (es. diventi banditore)
   window.addEventListener('navbar:recheck', () => {
-    // Non forzare la visibilità: durante i piccoli assestamenti di layout (es. rullo)
-    // la distanza reale potrebbe non essere cambiata abbastanza da richiedere il
-    // toggle. Limitandoci a programmare un nuovo calcolo evitiamo che la navbar
-    // venga mostrata per poi essere subito nascosta, eliminando il lampeggio.
+
     clearTimeout(debounceTimer);
     if (recheckTimer) {
       clearTimeout(recheckTimer);

@@ -662,27 +662,26 @@ body {
    border-top: 1px solid rgba(15, 23, 42, 0.12);
    padding-top: 1.5rem;
    /* Opzionale: usare `background: var(--bg-muted);` per evidenziare la separazione dal form squadra. */
- }
 
- .auth-card .auth-stack {
-   display: flex;
-   flex-direction: column;
-   gap: 0.75rem;
- }
 
- .auth-card .auth-row {
-   display: flex;
-   gap: 0.75rem;
-   flex-wrap: wrap;
- }
+.auth-card .auth-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
 
- .auth-card .auth-row .btn {
-   flex: 1 1 140px;
- }
+.auth-card .auth-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
 
- /* Nota: valutare una media query (es. max-width: 400px) per portare i bottoni al 100% in mobile. */
-==================================================================
-*/
+.auth-card .auth-row .btn {
+  flex: 1 1 140px;
+}
+
+/* Nota: valutare una media query (es. max-width: 400px) per portare i bottoni al 100% in mobile. */
+
 
 .card-note {
   font-size: .9rem;
