@@ -7,28 +7,8 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-/*
-////////////////////////////////////////////////////////////////
-// FUTURA AUTENTICAZIONE BASATA SU UTENTI REGISTRATI (COMMENTATA)
-// --------------------------------------------------------------
-// Per abilitare la registrazione/login con JWT:
-// 1. Installare le dipendenze: `npm install bcrypt jsonwebtoken cookie-parser`.
-// 2. Scommentare gli import qui sotto e nel resto del file.
-// 3. Impostare l'env JWT_SECRET con un valore sicuro.
-// 4. Scommentare i middleware e le route dedicate più in basso.
-// --------------------------------------------------------------
-// import bcrypt from 'bcrypt';
-// import jwt from 'jsonwebtoken';
-// import cookieParser from 'cookie-parser';
-// import {
-//   readUsers,
-//   writeUsers,
-//   touchUserSession,
-//   revokeUserSession,
-//   isSessionValid,
-// } from './storage.js';
-////////////////////////////////////////////////////////////////
-*/
+import { config } from './config.js';
+import { logger } from './logger.js';
 import {
   rooms,
   makeRoom,
@@ -42,34 +22,16 @@ import {
   hydrate,
   playerKey,
 } from './state.js';
-import { saveRoomSnapshot, loadRoomSnapshot, writeBackupFile } from './storage.js';
+import {
+  saveRoomSnapshot,
+  loadRoomSnapshot,
+  writeBackupFile,
+  flushRoomSnapshotNow,
+} from './storage.js';
 import { parseCSV, mapPlayers } from './csv.js';
 
 /* ================= CONFIGURATION =============== */
-const HOST_PIN = process.env.HOST_PIN || '';
-
-/*
-///////////////////////////////////////////////////////////////
-// CONFIGURAZIONE JWT (COMMENTATA)
-// -------------------------------------------------------------
-// Per attivare le sessioni utente basate su token:
-// - Impostare la variabile d'ambiente JWT_SECRET con un valore robusto.
-// - Facoltativamente configurare JWT_EXPIRES_IN (es. '12h') e JWT_COOKIE_NAME.
-// - Scommentare il blocco sottostante insieme agli import necessari.
-// -------------------------------------------------------------
-// const JWT_SECRET = process.env.JWT_SECRET || 'sviluppo-cambia-questa-stringa';
-// const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '12h';
-// const JWT_COOKIE_NAME = process.env.JWT_COOKIE_NAME || 'fb_auth';
-// const JWT_COOKIE_OPTIONS = {
-//   httpOnly: true,
-//  secure: process.env.NODE_ENV === 'production',
-//   sameSite: 'lax',
-//   path: '/',
-// };
-// // Nota: se si imposta sia un cookie HTTPOnly sia l'header Authorization,
-// // il middleware preferirà l'header Bearer per evitare conflitti fra sessioni.
-///////////////////////////////////////////////////////////////
-*/
+const HOST_PIN = config.hostPin;
 
 const ROOM_CFG = {
   allowOverbid: false,
@@ -80,29 +42,24 @@ const ROOM_CFG = {
 };
 
 const ROOM_ID = 'DEFAULT';
+const PORT = config.port;
 
 /* ================= APPLICATION SETUP =========== */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(cors());
+const corsMiddleware = cors({
+  origin(origin, callback) {
+    if (config.isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Origin non autorizzata'));
+    }
+  },
+});
+app.use(corsMiddleware);
 app.use(express.json({ limit: '5mb' }));
-/*
-// =============================================================
-// COOKIE & USER CONTEXT (COMMENTATI)
-// -------------------------------------------------------------
-// Per propagare automaticamente il token JWT via cookie HTTPOnly:
-// 1. Scommentare `app.use(cookieParser());` dopo aver installato il pacchetto.
-// 2. Scommentare il middleware `attachUserFromToken` definito più in basso.
-// 3. Assicurarsi che i client includano `credentials: 'include'` nelle fetch.
-// 4. In caso di token inviato sia via header sia via cookie, l'header Bearer
-//    avrà precedenza per rispettare la sessione scelta dall'utente.
-// -------------------------------------------------------------
-// app.use(cookieParser());
-// app.use(attachUserFromToken);
-// -------------------------------------------------------------
-*/
 
 const STATIC_DIR = path.resolve(__dirname, '../../client/public');
 app.use(
@@ -118,43 +75,17 @@ if (!rooms.has(ROOM_ID)) makeRoom(ROOM_ID);
 rooms.get(ROOM_ID).config = ROOM_CFG;
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: true } });
-/*
-////////////////////////////////////////////////////////////////
-// SOCKET.IO AUTH UTENTI (COMMENTATA)
-// --------------------------------------------------------------
-// Per richiedere un JWT valido ai client socket:
-// - Scommentare il blocco sottostante.
-// - Assicurarsi che `attachUserFromToken` popoli req.user o che
-//   il client invii `auth: { token: '...' }` in fase di connect.
-// - Integrare eventuali controlli di ruolo/permessi nelle
-//   sezioni esistenti senza toccare la logica anonima.
-////////////////////////////////////////////////////////////////
-// io.use((socket, next) => {
-//   try {
-//     const rawToken = socket.handshake?.auth?.token || socket.handshake?.headers?.authorization;
-//     const token = typeof rawToken === 'string' ? rawToken.replace(/^Bearer\s+/i, '') : null;
-//     if (!token) {
-//       return next(new Error('Token mancante'));
-//     }
-//     const user = jwt.verify(token, JWT_SECRET);
-//     if (!isSessionValid(token)) {
-//       return next(new Error('Sessione revocata'));
-//     }
-//     touchUserSession(user.id, token, JWT_EXPIRES_IN);
-//     socket.data = socket.data || {};
-//     socket.data.user = user;
-//     socket.data.userToken = token;
-//     // In caso di ruoli nel payload (es. { role: 'admin' }), conservarli
-//     // in `socket.data.user` per abilitarne l'uso nei controlli futuri.
-//     return next();
-//   } catch (err) {
-//     console.warn('[socket auth] connessione rifiutata:', err?.message);
-//     return next(new Error('Autenticazione richiesta'));
-//   }
-// });
-////////////////////////////////////////////////////////////////
-*/
+const io = new Server(server, {
+  cors: {
+    origin(origin, callback) {
+      if (config.isOriginAllowed(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Origin non autorizzata'));
+      }
+    },
+  },
+});
 
 /* ================= GENERAL HELPERS ============ */
 /** Restituisce il timestamp corrente in millisecondi. */
@@ -164,6 +95,18 @@ const now = () => Date.now();
 function makeKey() {
   return crypto.randomBytes(16).toString('hex');
 }
+
+if (!config.exportToken) {
+  logger.warn('EXPORT_TOKEN non configurato: export non protetti in dev.');
+}
+
+app.get('/health', (_req, res) => {
+  res.json({
+    ok: true,
+    version: process.env.npm_package_version || 'unknown',
+    env: config.nodeEnv,
+  });
+});
 
 /* ================= AUTH HELPERS =============== */
 /** Estrae il token host dagli header personalizzati o Bearer. */
@@ -183,168 +126,33 @@ function extractHostToken(req) {
   return null;
 }
 
-/*
-////////////////////////////////////////////////////////////////
-// FUTURI HELPER UTENTI/JWT (COMMENTATI)
-// --------------------------------------------------------------
-// Il middleware e le utility sottostanti permettono di validare
-// le credenziali degli utenti registrati senza influenzare la
-// logica attuale basata su hostToken/clientId anonimo.
-// Per abilitarli scommentare l'intero blocco e gli import.
-////////////////////////////////////////////////////////////////
-// async function hashPassword(password) {
-//   const rounds = Number(process.env.BCRYPT_ROUNDS || 10);
-//   return bcrypt.hash(password, rounds);
-// }
-//
-// async function verifyPassword(password, hash) {
-//   if (!hash) return false;
-//   try {
-//     return await bcrypt.compare(password, hash);
-//   } catch (_) {
-//     return false;
-//   }
-// }
-//
-// function signJwt(payload, overrides = {}) {
-//   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN, ...overrides });
-// }
-//
-// function buildAuthResponse(user, token) {
-//   const safeUser = { id: user.id, email: user.email, displayName: user.displayName };
-//   return { ok: true, token, user: safeUser };
-// }
-//
-// function attachUserFromToken(req, res, next) {
-//   const bearer = extractBearerToken(req.headers.authorization);
-//   const raw = bearer || req.cookies?.[JWT_COOKIE_NAME];
-//   if (!raw) return next();
-//   try {
-//     const decoded = jwt.verify(raw, JWT_SECRET);
-//     req.user = decoded;
-//     req.authToken = raw;
-//   } catch (err) {
-//     console.warn('[attachUserFromToken] token non valido:', err?.message);
-//     return res.status(401).json({ ok: false, error: 'Token non valido' });
-//   }
-//   next();
-// }
-//
-// function extractBearerToken(header) {
-//   if (!header || typeof header !== 'string') return null;
-//   const match = header.match(/^Bearer\s+(.+)$/i);
-//   return match && match[1] ? match[1].trim() : null;
-// }
-////////////////////////////////////////////////////////////////
-*/
-
 /** Middleware che valida il token host per le API riservate. */
 function requireHostAuth(req, res, next) {
   const room = rooms.get(ROOM_ID);
   if (!room || !room.hostToken) {
-    return res.status(403).json({ ok: false, error: 'Banditore non attivo' });
+    return res.status(403).json({ ok: false, error: 'Banditore non attivo', code: 'HOST_NOT_ACTIVE' });
   }
   const token = extractHostToken(req);
-  if (!token || token !== room.hostToken) {
-    return res.status(403).json({ ok: false, error: 'Autorizzazione host richiesta' });
+  if (!token) {
+    return res.status(403).json({ ok: false, error: 'Token host mancante', code: 'HOST_TOKEN_MISSING' });
+  }
+  if (isHostTokenExpired(room)) {
+    return res.status(403).json({ ok: false, error: 'Token host scaduto', code: 'HOST_TOKEN_EXPIRED' });
+  }
+  if (token !== room.hostToken) {
+    return res.status(403).json({ ok: false, error: 'Token host non valido', code: 'HOST_TOKEN_INVALID' });
   }
   req.room = room;
   next();
 }
 
-/*
-////////////////////////////////////////////////////////////////
-// API REST AUTENTICAZIONE (COMMENTATE)
-// --------------------------------------------------------------
-// Le route seguenti aggiungono signup/login/logout basate su JWT
-// mantenendo separata l'autorizzazione host. Sono pensate per
-// convivere con l'attuale gestione dei team anonimi.
-// Per abilitarle scommentare il blocco e assicurarsi che le
-// funzioni di storage utenti siano disponibili (vedi storage.js).
-////////////////////////////////////////////////////////////////
-// const authRouter = express.Router();
-//
-// authRouter.post('/signup', async (req, res) => {
-//   const { email, password, displayName } = req.body || {};
-//   if (!email || !password || !displayName) {
-//     return res.status(400).json({ ok: false, error: 'Dati obbligatori mancanti' });
-//   }
-//
-//   const normalizedEmail = String(email).trim().toLowerCase();
-//   if (!normalizedEmail.includes('@')) {
-//     return res.status(400).json({ ok: false, error: 'Email non valida' });
-//   }
-//   const users = await readUsers();
-//   if (users.some((u) => u.email === normalizedEmail)) {
-//     return res.status(409).json({ ok: false, error: 'Email già registrata' });
-//   }
-//
-//   const user = {
-//     id: crypto.randomUUID(),
-//     email: normalizedEmail,
-//     displayName: String(displayName).trim(),
-//     passwordHash: await hashPassword(password),
-//     createdAt: Date.now(),
-//   };
-//
-//   users.push(user);
-//   await writeUsers(users);
-//
-//   const token = signJwt({ id: user.id, email: user.email, displayName: user.displayName });
-//   touchUserSession(user.id, token, JWT_EXPIRES_IN);
-//
-//   if (req.headers['x-auth-use-cookie'] === '1') {
-//     res.cookie(JWT_COOKIE_NAME, token, JWT_COOKIE_OPTIONS);
-//     return res.status(201).json({ ok: true, user: { id: user.id, email: user.email, displayName: user.displayName } });
-//   }
-//
-//   res.status(201).json(buildAuthResponse(user, token));
-// });
-//
-// authRouter.post('/login', async (req, res) => {
-//   const { email, password } = req.body || {};
-//   if (!email || !password) {
-//     return res.status(400).json({ ok: false, error: 'Credenziali mancanti' });
-//   }
-//   const normalizedEmail = String(email).trim().toLowerCase();
-//   const users = await readUsers();
-//   const user = users.find((u) => u.email === normalizedEmail);
-//   if (!user) {
-//     return res.status(401).json({ ok: false, error: 'Credenziali errate' });
-//   }
-//   const valid = await verifyPassword(password, user.passwordHash);
-//   if (!valid) {
-//     return res.status(401).json({ ok: false, error: 'Credenziali errate' });
-//   }
-//
-//   const token = signJwt({ id: user.id, email: user.email, displayName: user.displayName });
-//   touchUserSession(user.id, token, JWT_EXPIRES_IN);
-//
-//   if (req.headers['x-auth-use-cookie'] === '1') {
-//     res.cookie(JWT_COOKIE_NAME, token, JWT_COOKIE_OPTIONS);
-//     return res.json({ ok: true, user: { id: user.id, email: user.email, displayName: user.displayName } });
-//   }
-//
-//   res.json(buildAuthResponse(user, token));
-// });
-//
-// authRouter.post('/logout', (req, res) => {
-//   const token = req.authToken || req.cookies?.[JWT_COOKIE_NAME] || extractBearerToken(req.headers.authorization);
-//   if (token) revokeUserSession(token);
-//   res.clearCookie(JWT_COOKIE_NAME, { ...JWT_COOKIE_OPTIONS, maxAge: 0 });
-//   res.json({ ok: true });
-// });
-//
-// authRouter.get('/me', (req, res) => {
-//   if (!req.user) return res.status(401).json({ ok: false, error: 'Non autenticato' });
-//   res.json({ ok: true, user: { id: req.user.id, email: req.user.email, displayName: req.user.displayName } });
-// });
-//
-// app.use('/api/auth', authRouter);
-// // Ricorda: `hostToken` resta un canale parallelo per i poteri del banditore
-// // e non coincide con eventuali ruoli applicativi presenti nel JWT utente.
-////////////////////////////////////////////////////////////////
-*/
+function requireExportToken(req, res, next) {
+  if (!config.exportToken) return next();
+  let token = req.headers['x-export-token'];
+  if (Array.isArray(token)) token = token[0];
+  if (token && token === config.exportToken) return next();
+  return res.status(403).json({ ok: false, error: 'Token export non valido' });
+}
 
 /* ================= RATE LIMIT ================= */
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -371,18 +179,38 @@ function importRateLimit(req, res, next) {
 function issueHostToken(room) {
   const token = crypto.randomBytes(16).toString('hex');
   room.hostToken = token;
+  room.hostTokenIssuedAt = now();
+  room.hostTokenExpiresAt = now() + config.hostTokenTtlHours * 60 * 60 * 1000;
   return token;
+}
+
+function isHostTokenExpired(room) {
+  if (!room?.hostToken) return true;
+  if (!room.hostTokenExpiresAt) return false;
+  if (now() <= room.hostTokenExpiresAt) return false;
+  room.hostToken = null;
+  room.hostTokenIssuedAt = null;
+  room.hostTokenExpiresAt = null;
+  return true;
 }
 
 /* ================= ROOM SYNC =================== */
 /** Invia lo stato aggiornato a tutti i socket connessi alla stanza. */
 function broadcast(room) {
-  for (const [, s] of io.of('/').sockets) {
-    const data = s.data || {};
-    if ((data.roomId || ROOM_ID) === room.id) {
-      s.emit('state', snapshot(room, data.teamId || null, s.id));
+  if (!room) return;
+  room.__broadcastDirty = true;
+  if (room.__broadcastTimer) return;
+  room.__broadcastTimer = setTimeout(() => {
+    room.__broadcastTimer = null;
+    if (!room.__broadcastDirty) return;
+    room.__broadcastDirty = false;
+    for (const [, s] of io.of('/').sockets) {
+      const data = s.data || {};
+      if ((data.roomId || ROOM_ID) === room.id) {
+        s.emit('state', snapshot(room, data.teamId || null, s.id));
+      }
     }
-  }
+  }, config.broadcastIntervalMs);
 }
 
 /** Aggiorna la fase dell'asta e azzera i campi coerenti con il nuovo stato. */
@@ -439,7 +267,7 @@ function persistRoom(room) {
     saveRoomSnapshot(snap);
     return snap;
   } catch (err) {
-    console.error('[persistRoom] Errore durante il salvataggio della stanza:', err);
+    logger.error({ err }, '[persistRoom] Errore durante il salvataggio della stanza');
     return null;
   }
 }
@@ -606,11 +434,14 @@ function finalizePendingSale(room) {
 
   const result = { ok: true, teamId: team.id, price, sale };
 
+  void flushRoomSnapshotNow(room.id);
   try {
     const snap = serialize(room);
-    writeBackupFile(snap);
+    void writeBackupFile(snap).catch((err) => {
+      logger.error({ err }, '[finalizePendingSale] Errore durante la scrittura del backup');
+    });
   } catch (err) {
-    console.error('[finalizePendingSale] Errore durante la scrittura del backup:', err);
+    logger.error({ err }, '[finalizePendingSale] Errore durante la scrittura del backup');
   }
 
   return result;
@@ -686,7 +517,7 @@ function scheduleAutoFinalize(room) {
     try {
       result = finalizePendingSale(room);
     } catch (err) {
-      console.error('[autoFinalize] Errore inatteso durante l\'assegnazione automatica:', err);
+      logger.error({ err }, '[autoFinalize] Errore inatteso durante l\'assegnazione automatica');
       recordAutoAssignError(room, { error: err?.message || 'Errore sconosciuto' }, 'auto');
       broadcast(room);
       return;
@@ -694,7 +525,7 @@ function scheduleAutoFinalize(room) {
     if (!result.ok) {
       if (result.code === 'NOOP') return;
       recordAutoAssignError(room, result, 'auto');
-      console.warn('[autoFinalize] Fallita auto-assegnazione:', room.autoAssignError);
+      logger.warn({ autoAssignError: room.autoAssignError }, '[autoFinalize] Fallita auto-assegnazione');
       broadcast(room);
       return;
     }
@@ -720,6 +551,7 @@ app.post('/api/listone/import', importRateLimit, requireHostAuth, (req, res) => 
     if (!csv || typeof csv !== 'string') return res.status(400).json({ ok:false, error:'CSV mancante' });
 
     const { header, items } = parseCSV(csv);
+    if (!header.length) return res.status(400).json({ ok: false, error: 'Header CSV mancante o non valido' });
     const total = items.length;
     const players = mapPlayers(items, map);
     const imported = players.length;
@@ -740,42 +572,52 @@ app.post('/api/listone/import', importRateLimit, requireHostAuth, (req, res) => 
 
 
 /* ================= EXPORT API ================= */
-app.get('/api/export/teams.csv', (_req, res) => {
+const CSV_FORMULA_RX = /^[=+\-@]/;
+const csvCell = (value) => {
+  let text = String(value ?? '');
+  if (CSV_FORMULA_RX.test(text)) text = `'${text}`;
+  text = text.replaceAll('"', '""');
+  return /[",\n]/.test(text) ? `"${text}"` : text;
+};
+
+const csvRows = (rows) => rows.map((r) => r.map(csvCell).join(',')).join('\n');
+
+app.get('/api/export/teams.csv', requireExportToken, (_req, res) => {
   const room = rooms.get(ROOM_ID);
   const rows = [['team','credits']].concat([...room.teams.values()].map(t => [t.name, t.credits]));
   res.setHeader('Content-Type','text/csv; charset=utf-8');
-  res.send(rows.map(r => r.map(v => String(v).replaceAll('"','""')).join(',')).join('\n'));
+  res.send(csvRows(rows));
 });
 
-app.get('/api/export/history.csv', (_req, res) => {
+app.get('/api/export/history.csv', requireExportToken, (_req, res) => {
   const room = rooms.get(ROOM_ID);
   const rows = [['at','team','player','role','price']]
     .concat(room.history.map(h => [new Date(h.at).toISOString(), h.teamName, h.playerName, h.role, h.price]));
   res.setHeader('Content-Type','text/csv; charset=utf-8');
-  res.send(rows.map(r => r.map(v => String(v).replaceAll('"','""')).join(',')).join('\n'));
+  res.send(csvRows(rows));
 });
 
-app.get('/api/export/all.json', (_req, res) => {
+app.get('/api/export/all.json', requireExportToken, (_req, res) => {
   const room = rooms.get(ROOM_ID);
   res.json({ teams: [...room.teams.values()], history: room.history, players: room.players });
 });
 
-app.get('/api/export/team/:id.csv', (req, res) => {
+app.get('/api/export/team/:id.csv', requireExportToken, (req, res) => {
   const room = rooms.get(ROOM_ID);
   const t = room.teams.get(req.params.id);
   if (!t) return res.status(404).send('Team non trovato');
   const rows = [['player','role','price','at']]
     .concat((t.acquisitions||[]).map(a => [a.player, a.role, a.price, new Date(a.at).toISOString()]));
   res.setHeader('Content-Type','text/csv; charset=utf-8');
-  res.send(rows.map(r => r.join(',')).join('\n'));
+  res.send(csvRows(rows));
 });
 
-app.get('/api/export/remaining.csv', (_req, res) => {
+app.get('/api/export/remaining.csv', requireExportToken, (_req, res) => {
   const room = rooms.get(ROOM_ID);
   const rows = [['name','role','team','fm']]
     .concat(room.players.map(p => [p.name, p.role, p.team || '', p.fm ?? '']));
   res.setHeader('Content-Type','text/csv; charset=utf-8');
-  res.send(rows.map(r => r.join(',')).join('\n'));
+  res.send(csvRows(rows));
 });
 
 
@@ -808,12 +650,15 @@ setInterval(() => {
         }
         transitionPhase(room, 'SOLD');
         if (room.leader){
-          const pendingSnap = serialize(room);
           // >>> BACKUP TIMESTAMPED QUI <<<
           try {
             const pendingSnap = serialize(room);
-            writeBackupFile(pendingSnap);
-          } catch {}
+            void writeBackupFile(pendingSnap).catch((err) => {
+              logger.error({ err }, '[countdown] Errore durante la scrittura del backup');
+            });
+          } catch (err) {
+            logger.error({ err }, '[countdown] Errore durante la scrittura del backup');
+          }
           scheduleAutoFinalize(room);
         }
       }
@@ -851,21 +696,6 @@ io.on('connection', (socket) => {
   const auth = socket.handshake?.auth || {};
   const claimedClientId = typeof auth.clientId === 'string' && auth.clientId ? auth.clientId : null;
   const claimedHostToken = typeof auth.hostToken === 'string' && auth.hostToken ? auth.hostToken : null;
-
-  /*
-  ////////////////////////////////////////////////////////////////
-  // UTILIZZO FUTURO DELL'UTENTE AUTENTICATO
-  // --------------------------------------------------------------
-  // Se si abilita il controllo JWT sul socket (vedi blocco io.use
-  // più in alto), qui è possibile utilizzare `socket.data.user`
-  // per personalizzare messaggi o permessi aggiuntivi senza
-  // intaccare l'attuale esperienza anonima.
-  // Esempio:
-  // if (socket.data?.user) {
-  //   console.debug('Utente connesso:', socket.data.user.email);
-  // }
-  ////////////////////////////////////////////////////////////////
-  */
 
   socket.data = socket.data || {};
   socket.data.clientId = claimedClientId || socket.data.clientId || null;
@@ -995,11 +825,13 @@ io.on('connection', (socket) => {
         persistRoom(room);
         broadcast(room);
       }
-      return cb && cb({ ok: true, host: true, hostToken: token });
+      return cb && cb({ ok: true, host: true, hostToken: token, hostTokenExpiresAt: room.hostTokenExpiresAt });
     } else if (room.hostOwner === socket.id) {
       room.hostOwner = null;
       room.hostOwnerClientId = null;
       room.hostToken = null;
+      room.hostTokenIssuedAt = null;
+      room.hostTokenExpiresAt = null;
       persistRoom(room);
       broadcast(room);
       return cb && cb({ ok: true, host: false });
@@ -1007,12 +839,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('host:reclaim', ({ token }, cb) => {
-    if (!token || token !== room.hostToken) return cb && cb({ error: 'Token host non valido' });
+    if (!token || token !== room.hostToken) return cb && cb({ error: 'Token host non valido', code: 'HOST_TOKEN_INVALID' });
+    if (isHostTokenExpired(room)) {
+      return cb && cb({ error: 'Token host scaduto', code: 'HOST_TOKEN_EXPIRED' });
+    }
     room.hostOwner = socket.id;
     room.hostOwnerClientId = socket.data?.clientId ?? null;
     persistRoom(room);
     broadcast(room);
-    cb && cb({ ok: true });
+    cb && cb({ ok: true, hostTokenExpiresAt: room.hostTokenExpiresAt });
   });
 
   /* ================= HOST FILTERS ============== */
@@ -1303,9 +1138,11 @@ io.on('connection', (socket) => {
     persistRoom(currentRoom);
     try {
       const snap = serialize(currentRoom);
-      writeBackupFile(snap);
+      void writeBackupFile(snap).catch((err) => {
+        logger.error({ err }, '[host:undoPurchase] Errore durante la scrittura del backup');
+      });
     } catch (err) {
-      console.error('[host:undoPurchase] Errore durante la scrittura del backup:', err);
+      logger.error({ err }, '[host:undoPurchase] Errore durante la scrittura del backup');
     }
     broadcast(currentRoom);
     cb && cb({ ok: true });
@@ -1424,6 +1261,7 @@ io.on('connection', (socket) => {
     currentRoom.currentIndex = 0;
     transitionPhase(currentRoom, 'LOBBY');
 
+    void flushRoomSnapshotNow(currentRoom.id);
     cb && cb({ ok: true });
   });
 
@@ -1464,7 +1302,11 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 8080;
+app.use((err, _req, res, _next) => {
+  logger.error({ err }, 'Unhandled error');
+  res.status(500).json({ ok: false, error: 'Errore interno' });
+});
+
 server.listen(PORT, '0.0.0.0', () => {
   const nets = os.networkInterfaces();
   const ips = [];
@@ -1473,8 +1315,8 @@ server.listen(PORT, '0.0.0.0', () => {
       if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
     }
   }
-  console.log(`FantaBid server on: http://localhost:${PORT}`);
+  logger.info(`FantaBid server on: http://localhost:${PORT}`);
   if (ips.length) {
-    console.log('LAN access:', ips.map((ip) => `http://${ip}:${PORT}`).join('  '));
+    logger.info(`LAN access: ${ips.map((ip) => `http://${ip}:${PORT}`).join('  ')}`);
   }
 });

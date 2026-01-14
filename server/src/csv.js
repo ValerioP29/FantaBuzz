@@ -1,56 +1,33 @@
 /* ================= CSV PARSING ================= */
+import { parse } from 'csv-parse/sync';
+
 /**
- * Converte il testo CSV in un oggetto con header e righe, gestendo CRLF e separatori comuni.
+ * Converte il testo CSV in un oggetto con header e righe, gestendo quoting/escape.
  */
 export function parseCSV(text) {
-  const rows = String(text || '')
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .filter((r) => r.trim() !== '');
-  if (rows.length === 0) return { header: [], items: [] };
+  const raw = String(text || '');
+  if (!raw.trim()) return { header: [], items: [] };
 
-  const sep = guessSep(rows[0]);
-  const header = rows[0].split(sep).map((h) => h.trim());
-  const items = [];
-  for (let i = 1; i < rows.length; i++) {
-    const cols = safeSplit(rows[i], sep, header.length);
+  const rows = parse(raw, {
+    relax_quotes: true,
+    relax_column_count: true,
+    skip_empty_lines: true,
+    trim: true,
+    delimiter: [',', ';', '\t'],
+  });
+
+  if (!rows.length) return { header: [], items: [] };
+
+  const header = rows[0].map((h) => String(h ?? '').trim());
+  const items = rows.slice(1).map((row) => {
     const obj = {};
     header.forEach((h, idx) => {
-      obj[h] = cols[idx];
+      obj[h] = row[idx] ?? '';
     });
-    items.push(obj);
-  }
+    return obj;
+  });
+
   return { header, items };
-}
-
-/** Tenta di dedurre il separatore CSV più probabile a partire dall'intestazione. */
-function guessSep(sample) {
-  if (sample.includes(';')) return ';';
-  if (sample.includes('\t')) return '\t';
-  return ',';
-}
-
-/** Suddivide una riga CSV gestendo le virgolette basilari. */
-function safeSplit(line, sep, expect) {
-  const out = [];
-  let cur = '';
-  let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      inQ = !inQ;
-      continue;
-    }
-    if (!inQ && ch === sep) {
-      out.push(cur.trim());
-      cur = '';
-      continue;
-    }
-    cur += ch;
-  }
-  out.push(cur.trim());
-  while (out.length < expect) out.push('');
-  return out;
 }
 
 /* ================= PLAYER MAPPING ============== */
@@ -136,7 +113,7 @@ export function mapPlayers(items, map) {
 
     if (!name || !['P', 'D', 'C', 'A'].includes(role)) continue;
 
-    const key = `${name}#${role}`.toUpperCase();
+    const key = `${name}#${role}#${team.toLowerCase()}#${fm ?? ''}`.toUpperCase();
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -145,4 +122,3 @@ export function mapPlayers(items, map) {
 
   return out;
 }
-

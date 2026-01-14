@@ -1,152 +1,50 @@
 let storedHostToken = null;
 
-/*
-////////////////////////////////////////////////////////////////
-// FUTURA AUTENTICAZIONE UTENTI (COMMENTATA)
-// --------------------------------------------------------------
-// Questo blocco integra login/logout basati su API REST + JWT
-// senza alterare l'attuale login anonimo delle squadre.
-// Per abilitarlo:
-// 1. Scommentare tutte le funzioni qui sotto.
-// 2. Abilitare le route server corrispondenti (vedi server/src/index.js).
-// 3. Assicurarsi che le fetch includano `credentials: 'include'` se
-//    si decide di utilizzare i cookie HTTPOnly.
-////////////////////////////////////////////////////////////////
-// const authState = {
-//   user: null,
-//   token: null,
-//   loading: false,
-// };
-
-// function syncAuthButtonsDisabled() {
-//   const loginBtn = $('btnLogin');
-//   const signupBtn = $('btnSignup');
-//   if (loginBtn) loginBtn.disabled = !!authState.loading;
-//   if (signupBtn) signupBtn.disabled = !!authState.loading;
-// }
-//
-// async function authRequest(path, options = {}) {
-//   const res = await fetch(`/api/auth${path}`, {
-//     method: 'POST',
-//     headers: {
-//       'Content-Type': 'application/json',
-//       ...(authState.token ? { Authorization: `Bearer ${authState.token}` } : {}),
-//     },
-//     credentials: 'include',
-//     ...options,
-//   });
-//   const data = await res.json().catch((err) => {
-//     console.warn('[authRequest] risposta JSON non valida:', err?.message);
-//     return { ok: false, error: 'Risposta non valida dal server' };
-//   });
-//   if (!res.ok || !data?.ok) throw new Error(data?.error || 'Richiesta fallita');
-//   return data;
-// }
-//
-// async function signupUser({ email, password, displayName }) {
-//   authState.loading = true;
-//   syncAuthButtonsDisabled();
-//   try {
-//     const data = await authRequest('/signup', {
-//       body: JSON.stringify({ email, password, displayName }),
-//     });
-//     applyAuthSession(data);
-//     notify(`Benvenuto ${data.user.displayName}!`, 'success');
-//     return data;
-//   } finally {
-//     authState.loading = false;
-//     syncAuthButtonsDisabled();
-//   }
-// }
-//
-// async function loginUser({ email, password }) {
-//   authState.loading = true;
-//   syncAuthButtonsDisabled();
-//   try {
-//     const data = await authRequest('/login', {
-//       body: JSON.stringify({ email, password }),
-//     });
-//     applyAuthSession(data);
-//     notify(`Bentornato ${data.user.displayName}!`, 'success');
-//     return data;
-//   } finally {
-//     authState.loading = false;
-//     syncAuthButtonsDisabled();
-//   }
-// }
-//
-// async function logoutUser() {
-//   try {
-//     await authRequest('/logout', { method: 'POST', body: '{}' });
-//   } catch (err) {
-//     console.warn('logout fallito (ignora se offline):', err?.message);
-//   }
-//   // Se in futuro si opta per cookie HTTPOnly ricordarsi che il server
-//   // deve invalidare anche il cookie, non solo il token in memoria/localStorage.
-//   clearAuthSession();
-// }
-//
-// function applyAuthSession({ token, user }) {
-//   authState.user = user || null;
-//   authState.token = token || null;
-//   socket.auth = socket.auth || {};
-//   if (authState.token) {
-//     socket.auth.token = authState.token;
-//   } else if (socket?.auth?.token) {
-//     delete socket.auth.token;
-//   }
-//   try {
-//     localStorage.setItem('authUserSession', JSON.stringify({ token: authState.token, user: authState.user }));
-//   } catch (_) {}
-// }
-//
-// function clearAuthSession() {
-//   authState.user = null;
-//   authState.token = null;
-//   if (socket?.auth?.token) delete socket.auth.token;
-//   try { localStorage.removeItem('authUserSession'); } catch (_) {}
-// }
-//
-// function restoreAuthSession() {
-//   try {
-//     const raw = localStorage.getItem('authUserSession');
-//     if (!raw) return;
-//     const saved = JSON.parse(raw);
-//     if (saved?.token && saved?.user) {
-//       applyAuthSession(saved);
-//     }
-//   } catch (err) {
-//     console.warn('Impossibile ripristinare la sessione utente:', err?.message);
-//   }
-// }
-//
-// restoreAuthSession();
-////////////////////////////////////////////////////////////////
-*/
-
 /* ================= SESSION STORAGE ============= */
 /** Recupera un eventuale token host salvato localmente. */
 function bootstrapStoredHostToken() {
   let token = null;
   try {
-    token = localStorage.getItem('hostToken');
+    const raw = localStorage.getItem('hostToken');
+    if (!raw) return;
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+    if (parsed && typeof parsed === 'object') {
+      token = parsed;
+    } else if (typeof raw === 'string') {
+      token = { token: raw, expiresAt: null };
+    }
   } catch (_) {}
+  if (token?.expiresAt && Date.now() > token.expiresAt) {
+    setStoredHostToken(null);
+    return;
+  }
   if (token) setStoredHostToken(token);
 }
 
 /** Memorizza il token host e lo sincronizza con l'oggetto socket. */
-function setStoredHostToken(token) {
-  storedHostToken = token || null;
+function setStoredHostToken(token, expiresAt = null) {
+  if (token && typeof token === 'object') {
+    storedHostToken = token;
+  } else if (token) {
+    storedHostToken = { token, expiresAt };
+  } else {
+    storedHostToken = null;
+  }
   try {
     if (storedHostToken) {
-      localStorage.setItem('hostToken', storedHostToken);
+      localStorage.setItem('hostToken', JSON.stringify(storedHostToken));
     } else {
       localStorage.removeItem('hostToken');
     }
   } catch (_) {}
   socket.auth = socket.auth || {};
-  if (storedHostToken) {
-    socket.auth.hostToken = storedHostToken;
+  if (storedHostToken?.token) {
+    socket.auth.hostToken = storedHostToken.token;
   } else if (socket?.auth && 'hostToken' in socket.auth) {
     delete socket.auth.hostToken;
   }
@@ -155,7 +53,25 @@ function setStoredHostToken(token) {
 /** Restituisce il token host attivo, se disponibile. */
 function getHostToken() {
   if (socket?.auth?.hostToken) return socket.auth.hostToken;
-  return storedHostToken;
+  return storedHostToken?.token || null;
+}
+
+function getExportToken() {
+  try {
+    return sessionStorage.getItem('exportToken');
+  } catch (_) {
+    return null;
+  }
+}
+
+function setExportToken(token) {
+  try {
+    if (token) {
+      sessionStorage.setItem('exportToken', token);
+    } else {
+      sessionStorage.removeItem('exportToken');
+    }
+  } catch (_) {}
 }
 
 /** Garantisce la presenza di un clientId persistente per la sessione. */
@@ -177,18 +93,6 @@ function ensureClientId() {
 /* ================= SOCKET INITIALIZATION ======= */
 const socket = io({ autoConnect: false });
 socket.auth = socket.auth || {};
-
-/*
-///////////////////////////////////////////////////////////////
-// HANDSHAKE CON TOKEN UTENTE (COMMENTATO)
-// -------------------------------------------------------------
-// Quando l'autenticazione verrà attivata, `restoreAuthSession()`
-// si occuperà di ripristinare sia lo stato UI sia `socket.auth.token`.
-// Se si desidera forzare una richiesta manuale prima del connect,
-// scommentare la chiamata diretta `restoreAuthSession();` appena
-// dopo l'inizializzazione dello `socket`.
-///////////////////////////////////////////////////////////////
-*/
 
 const clientId = ensureClientId();
 if (clientId) socket.auth.clientId = clientId;
@@ -220,7 +124,7 @@ let lastPlayerName = null;
     } else {
       // token non valido o team sparito: pulisci e resta in login
       try { localStorage.removeItem('teamSession'); } catch(_){}
-      if (res?.error) console.warn('Resume fallito:', res.error);
+      if (res?.error) notify(res.error, 'warn');
     }
   });
 })();
@@ -233,6 +137,9 @@ if (initialHostToken) {
       notify('Ruolo banditore ripristinato', 'info');
       youAreHost = true;
       __hostView = 'controls';
+      if (res?.hostTokenExpiresAt) {
+        setStoredHostToken(initialHostToken, res.hostTokenExpiresAt);
+      }
       if (window.__last_state) {
         applyHostPanels(window.__last_state);
         applyRollMsUI(window.__last_state);
@@ -241,6 +148,9 @@ if (initialHostToken) {
         applyHostPanels({ youAreHost: true });
       }
     } else {
+      if (res?.code === 'HOST_TOKEN_EXPIRED' || res?.code === 'HOST_TOKEN_INVALID') {
+        setStoredHostToken(null);
+      }
       notify(res?.error || 'Impossibile ripristinare il ruolo banditore', 'error');
     }
   });
@@ -344,6 +254,29 @@ function notify(text, type = 'info') {
   };
   toastRegistry.set(registryKey, entry);
   setupToastElement(toast, entry, message);
+}
+
+async function downloadExport(url, token) {
+  const headers = token ? { 'X-Export-Token': token } : {};
+  const res = await fetch(url, { headers });
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, unauthorized: true };
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || 'Export fallito');
+  }
+  const blob = await res.blob();
+  const filename = url.split('/').pop() || 'export';
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+  return { ok: true };
 }
 
 /** Aggiorna il pulsante play/pause del rullo in base allo stato corrente. */
@@ -720,7 +653,21 @@ $('btnEnter').onclick = () => {
     $('screenMain').classList.remove('hidden');
 
     if ($('regHost').checked) {
-      socket.emit('host:toggle', {}, (r)=>{ if(r?.error) notify(r.error, 'error'); });
+      const payload = {};
+      if (!document.body.dataset.hostPinAsked) {
+        const pin = prompt('PIN banditore (se configurato):') || '';
+        payload.pin = pin;
+      }
+      socket.emit('host:toggle', payload, (r)=>{
+        if (r?.error) {
+          delete document.body.dataset.hostPinAsked;
+          return notify(r.error, 'error');
+        }
+        if (r.host && r.hostToken) {
+          document.body.dataset.hostPinAsked = '1';
+          setStoredHostToken(r.hostToken, r.hostTokenExpiresAt || null);
+        }
+      });
     }
     notify('Sei dentro. Buona asta.', 'success');
   });
@@ -737,11 +684,14 @@ $('btnHostToggle').onclick = () => {
   socket.emit('host:toggle', payload, (res)=>{
     if(res?.error) {
       delete document.body.dataset.hostPinAsked;
+      if (res?.code === 'HOST_TOKEN_EXPIRED' || res?.code === 'HOST_TOKEN_INVALID') {
+        setStoredHostToken(null);
+      }
       return notify(res.error, 'error');
     }
     if (res.host && res.hostToken) {
       document.body.dataset.hostPinAsked = '1';
-      setStoredHostToken(res.hostToken);
+      setStoredHostToken(res.hostToken, res.hostTokenExpiresAt || null);
       notify('Hai preso il ruolo di banditore', 'info');
     } else if (!res.host) {
       delete document.body.dataset.hostPinAsked;
@@ -1025,7 +975,6 @@ fileInput.onchange = async (e) => {
     notify(`Importati ${j.imported} • Scartati ${j.rejected}`, 'success');
 
   } catch (err) {
-    console.error(err);
     notify(err.message || 'Errore import', 'error');
   } finally {
     e.target.value = '';
@@ -1216,18 +1165,8 @@ manualPriceInput?.addEventListener('input', refreshManualAssignButton);
 function logoutLocal() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('teamSession') || 'null'); } catch(_){}
-
-  /*
-  ////////////////////////////////////////////////////////////////
-  // INTEGRAZIONE FUTURA CON LOGOUT UTENTE
-  // --------------------------------------------------------------
-  // Se l'autenticazione utenti è abilitata, richiamare
-  // `logoutUser()` qui per revocare anche la sessione JWT.
-  // Basta scommentare la riga seguente.
-  ////////////////////////////////////////////////////////////////
-  // if (typeof logoutUser === 'function') logoutUser();
-  ////////////////////////////////////////////////////////////////
-  */
+  setStoredHostToken(null);
+  setExportToken(null);
 
   // se non c’è sessione salvata, fai solo cleanup
   if (!saved?.teamId || !saved?.key) {
@@ -1250,6 +1189,39 @@ function logoutLocal() {
   });
 }
 
+function setupExportLinks() {
+  document.querySelectorAll('a[data-export]').forEach((link) => {
+    link.addEventListener('click', async (event) => {
+      event.preventDefault();
+      if (link.getAttribute('href') === '#') {
+        notify('Export disponibile dopo la registrazione della squadra.', 'warn');
+        return;
+      }
+      let token = getExportToken();
+      try {
+        let result = await downloadExport(link.href, token);
+        if (result.ok) return;
+
+        if (result.unauthorized && !token) {
+          const input = prompt('Inserisci Export Token:');
+          if (!input) return;
+          token = input.trim();
+          setExportToken(token);
+          result = await downloadExport(link.href, token);
+          if (result.ok) return;
+        }
+
+        if (result.unauthorized) {
+          setExportToken(null);
+          notify('Token export non valido', 'error');
+        }
+      } catch (err) {
+        notify(err?.message || 'Export fallito', 'error');
+      }
+    });
+  });
+}
+
 $('btnHostExitAndClose').addEventListener('click', () => {
   if (!confirm('Confermi? Verranno rimossi partecipanti e aggiudicazioni.')) return;
   socket.emit('host:exitAndClose', {}, (res) => {
@@ -1267,46 +1239,8 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btn) {
      btn.onclick = logoutLocal;
   }
-  /*
-  ////////////////////////////////////////////////////////////////
-  // EVENTI FUTURI DI LOGIN/SIGNUP (COMMENTATI)
-  // --------------------------------------------------------------
-  // Una volta abilitate le API di autenticazione:
-  // const emailEl = $('authEmail');
-  // const passEl = $('authPassword');
-  // const loginBtn = $('btnLogin');
-  // const signupBtn = $('btnSignup');
-  // $('btnLogin')?.addEventListener('click', async () => {
-  //   try {
-  //     await loginUser({ email: emailEl.value, password: passEl.value });
-  //     $('authHint').textContent = 'Login effettuato! Ora registra o riprendi la tua squadra.';
-  //     emailEl.value = '';
-  //     passEl.value = '';
-  //   } catch (err) {
-  //     notify(err.message || 'Login fallito', 'error');
-  //   } finally {
-  //     syncAuthButtonsDisabled();
-  //   }
-  // });
-  // $('btnSignup')?.addEventListener('click', async () => {
-  //   try {
-  //     await signupUser({
-  //       email: emailEl.value,
-  //       password: passEl.value,
-  //       displayName: $('regName')?.value || emailEl.value,
-  //     });
-  //     $('authHint').textContent = 'Registrazione completata! Puoi ora partecipare come manager.';
-  //     emailEl.value = '';
-  //     passEl.value = '';
-  //   } catch (err) {
-  //     notify(err.message || 'Registrazione fallita', 'error');
-  //   } finally {
-  //     syncAuthButtonsDisabled();
-  //   }
-  // });
-  ////////////////////////////////////////////////////////////////
-  */
-})
+  setupExportLinks();
+});
 
 socket.on('you:kicked', ()=>{
   try {

@@ -650,39 +650,6 @@ body {
   color: var(--muted);
 }
 
-/*
-==================================================================
- FUTURE AUTH STYLES (COMMENTATE)
- -----------------------------------------------------------------
- Scommentare questo blocco quando si attiverà il form di login
- utenti presente in index.html. Le classi sono pensate per
- integrarsi con lo stile attuale senza rompere il layout.
-==================================================================
- .auth-card {
-   border-top: 1px solid rgba(15, 23, 42, 0.12);
-   padding-top: 1.5rem;
-   /* Opzionale: usare `background: var(--bg-muted);` per evidenziare la separazione dal form squadra. */
-
-
-.auth-card .auth-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.auth-card .auth-row {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.auth-card .auth-row .btn {
-  flex: 1 1 140px;
-}
-
-/* Nota: valutare una media query (es. max-width: 400px) per portare i bottoni al 100% in mobile. */
-
-
 .card-note {
   font-size: .9rem;
   line-height: 1.5;
