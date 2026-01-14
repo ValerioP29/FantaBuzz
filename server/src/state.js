@@ -50,6 +50,8 @@ export function makeRoom(id) {
     hostOwner: null,
     hostOwnerClientId: null,
     hostToken: null,
+    hostTokenIssuedAt: null,
+    hostTokenExpiresAt: null,
     teams: new Map(),
 
     phase: 'LOBBY',
@@ -384,6 +386,8 @@ export function hydrate(room, snap) {
   room.hostOwner = null;
   room.hostOwnerClientId = null;
   room.hostToken = null;
+  room.hostTokenIssuedAt = null;
+  room.hostTokenExpiresAt = null;
   room.deadline = 0;
   room.countdownSec = 0;
   room.rolling = false;

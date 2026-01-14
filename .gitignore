@@ -14,7 +14,7 @@ build/
 
 # Dati runtime (non devono mai finire su GitHub)
 server/data/
-*.json
+server/data/*.json
 
 # PWA / browser cache
 client/public/sw.js
