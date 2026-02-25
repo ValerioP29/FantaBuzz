@@ -1,0 +1,17 @@
+{
+  "id": "DEFAULT",
+  "createdAt": 1772032835450,
+  "version": 0,
+  "sessionEpoch": 1,
+  "hostOwner": null,
+  "teams": [],
+  "phase": "LOBBY",
+  "topBid": 0,
+  "leader": null,
+  "history": [],
+  "players": [],
+  "filterRole": "ALL",
+  "currentIndex": 0,
+  "armMs": 2000,
+  "rollMs": 1000
+}
